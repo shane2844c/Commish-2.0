@@ -25,14 +25,18 @@ type MonthlySetupFormProps = {
     year?: number;
     employmentType?: "full-time" | "part-time";
     fullTimeTarget?: number;
+    fullTimePointsTarget?: number;
     fullTimeRosteredDays?: number;
     userRosteredDays?: number;
-    gwpTarget?: number;
-    conversionTarget?: number;
-    startingSales?: number;
-    startingContacts?: number;
-    startingGwpTotal?: number;
+    inboundTarget?: number;
+    outboundTarget?: number;
+    transferTarget?: number;
+    startingInboundContacts?: number;
+    startingOutboundContacts?: number;
+    startingTransferContacts?: number;
+    startingActualSales?: number;
     startingSalesPoints?: number;
+    startingAverageGwp?: number;
   };
 };
 
@@ -41,19 +45,19 @@ export default function MonthlySetupForm({ defaultValues }: MonthlySetupFormProp
   const [state, formAction, pending] = useActionState(saveMonthlySetup, {});
 
   const inputClass =
-    "mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500";
-  const labelClass = "block text-sm font-medium text-gray-700";
+    "mt-1 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[#dbe9fb]";
+  const labelClass = "block text-sm font-semibold text-[var(--muted)]";
 
   return (
     <form action={formAction} className="space-y-8">
       {state.error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-[var(--error-soft)] px-4 py-3 text-sm text-red-700">
           {state.error}
         </div>
       )}
 
-      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Period</h2>
+      <section className="rounded-xl border border-[var(--border)] bg-white p-6 shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
+        <h2 className="text-xl font-semibold text-[var(--foreground)]">Month Setup</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="month" className={labelClass}>
@@ -85,12 +89,6 @@ export default function MonthlySetupForm({ defaultValues }: MonthlySetupFormProp
               required
             />
           </div>
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Monthly Targets</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="employmentType" className={labelClass}>
               Employment Type
@@ -116,6 +114,21 @@ export default function MonthlySetupForm({ defaultValues }: MonthlySetupFormProp
               step="0.01"
               min="0"
               defaultValue={defaultValues?.fullTimeTarget ?? ""}
+              className={inputClass}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="fullTimePointsTarget" className={labelClass}>
+              Full-time Points Target
+            </label>
+            <input
+              id="fullTimePointsTarget"
+              name="fullTimePointsTarget"
+              type="number"
+              step="0.01"
+              min="0"
+              defaultValue={defaultValues?.fullTimePointsTarget ?? defaultValues?.fullTimeTarget ?? ""}
               className={inputClass}
               required
             />
@@ -151,82 +164,115 @@ export default function MonthlySetupForm({ defaultValues }: MonthlySetupFormProp
             />
           </div>
           <div>
-            <label htmlFor="gwpTarget" className={labelClass}>
-              GWP Target
+            <label htmlFor="inboundTarget" className={labelClass}>
+              Inbound Target Conversion
             </label>
             <input
-              id="gwpTarget"
-              name="gwpTarget"
+              id="inboundTarget"
+              name="inboundTarget"
               type="number"
-              step="0.01"
+              step="0.0001"
               min="0"
-              defaultValue={defaultValues?.gwpTarget ?? ""}
+              defaultValue={defaultValues?.inboundTarget ?? 0}
               className={inputClass}
               required
             />
           </div>
           <div>
-            <label htmlFor="conversionTarget" className={labelClass}>
-              Conversion Target (optional)
+            <label htmlFor="outboundTarget" className={labelClass}>
+              Outbound Target Conversion
             </label>
             <input
-              id="conversionTarget"
-              name="conversionTarget"
+              id="outboundTarget"
+              name="outboundTarget"
+              type="number"
+              step="0.0001"
+              min="0"
+              defaultValue={defaultValues?.outboundTarget ?? 0}
+              className={inputClass}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="transferTarget" className={labelClass}>
+              Transfer Target Conversion
+            </label>
+            <input
+              id="transferTarget"
+              name="transferTarget"
+              type="number"
+              step="0.0001"
+              min="0"
+              defaultValue={defaultValues?.transferTarget ?? 0}
+              className={inputClass}
+              required
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-[var(--border)] bg-white p-6 shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
+        <h2 className="text-xl font-semibold text-[var(--foreground)]">Starting Contacts</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="startingInboundContacts" className={labelClass}>
+              Inbound Contacts
+            </label>
+            <input
+              id="startingInboundContacts"
+              name="startingInboundContacts"
               type="number"
               step="0.01"
               min="0"
-              defaultValue={defaultValues?.conversionTarget ?? 0}
+              defaultValue={defaultValues?.startingInboundContacts ?? 0}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="startingOutboundContacts" className={labelClass}>
+              Outbound Contacts
+            </label>
+            <input
+              id="startingOutboundContacts"
+              name="startingOutboundContacts"
+              type="number"
+              step="0.01"
+              min="0"
+              defaultValue={defaultValues?.startingOutboundContacts ?? 0}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="startingTransferContacts" className={labelClass}>
+              Transfer Contacts
+            </label>
+            <input
+              id="startingTransferContacts"
+              name="startingTransferContacts"
+              type="number"
+              step="0.01"
+              min="0"
+              defaultValue={defaultValues?.startingTransferContacts ?? 0}
               className={inputClass}
             />
           </div>
         </div>
       </section>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Starting Statistics</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          If joining mid-month, enter your current totals before daily tracking.
-        </p>
+      <section className="rounded-xl border border-[var(--border)] bg-white p-6 shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
+        <h2 className="text-xl font-semibold text-[var(--foreground)]">Starting Sales</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="startingSales" className={labelClass}>
-              Starting Sales
+            <label htmlFor="startingActualSales" className={labelClass}>
+              Actual Sales
             </label>
             <input
-              id="startingSales"
-              name="startingSales"
+              id="startingActualSales"
+              name="startingActualSales"
               type="number"
               step="0.01"
               min="0"
-              defaultValue={defaultValues?.startingSales ?? 0}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="startingContacts" className={labelClass}>
-              Starting Contacts
-            </label>
-            <input
-              id="startingContacts"
-              name="startingContacts"
-              type="number"
-              step="0.01"
-              min="0"
-              defaultValue={defaultValues?.startingContacts ?? 0}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="startingGwpTotal" className={labelClass}>
-              Starting GWP Total
-            </label>
-            <input
-              id="startingGwpTotal"
-              name="startingGwpTotal"
-              type="number"
-              step="0.01"
-              min="0"
-              defaultValue={defaultValues?.startingGwpTotal ?? 0}
+              defaultValue={defaultValues?.startingActualSales ?? 0}
               className={inputClass}
             />
           </div>
@@ -244,15 +290,29 @@ export default function MonthlySetupForm({ defaultValues }: MonthlySetupFormProp
               className={inputClass}
             />
           </div>
+          <div>
+            <label htmlFor="startingAverageGwp" className={labelClass}>
+              Average GWP
+            </label>
+            <input
+              id="startingAverageGwp"
+              name="startingAverageGwp"
+              type="number"
+              step="0.01"
+              min="0"
+              defaultValue={defaultValues?.startingAverageGwp ?? 0}
+              className={inputClass}
+            />
+          </div>
         </div>
       </section>
 
       <button
         type="submit"
         disabled={pending}
-        className="rounded-md bg-gray-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        className="rounded-lg bg-[var(--brand)] px-6 py-2.5 text-sm font-medium text-white hover:bg-[var(--brand-dark)] disabled:opacity-50"
       >
-        {pending ? "Saving..." : "Save Monthly Setup"}
+        {pending ? "Saving..." : "Save Starting Data"}
       </button>
     </form>
   );

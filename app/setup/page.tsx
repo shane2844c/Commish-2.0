@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import MonthlySetupForm from "@/components/MonthlySetupForm";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentMonthYear } from "@/lib/types";
+import { getCurrentMonthYear, rowToStartingDataInput } from "@/lib/types";
 
 export default async function SetupPage() {
   const supabase = await createClient();
@@ -23,38 +23,50 @@ export default async function SetupPage() {
   const { month, year } = getCurrentMonthYear();
 
   const { data: existingSetup } = await supabase
-    .from("monthly_setups")
+    .from("consultant_months")
     .select("*")
     .eq("user_id", user.id)
     .eq("month", month)
     .eq("year", year)
     .maybeSingle();
 
+  let baselineContacts = null;
+  let baselineSales = null;
+
+  if (existingSetup) {
+    const [{ data: contactRow }, { data: salesRow }] = await Promise.all([
+      supabase
+        .from("daily_contact_entries")
+        .select("*")
+        .eq("consultant_month_id", existingSetup.id)
+        .eq("source", "baseline")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("sales_entries")
+        .select("*")
+        .eq("consultant_month_id", existingSetup.id)
+        .eq("source", "baseline")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    baselineContacts = contactRow;
+    baselineSales = salesRow;
+  }
+
   return (
-    <DashboardShell userName={profile?.full_name}>
+    <DashboardShell userName={profile?.full_name} activeItem="starting-data">
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Monthly Setup</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Configure your targets and starting statistics for the month.
-        </p>
+        <h2 className="text-3xl font-semibold text-[var(--foreground)]">Starting Data</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Set baseline values for this month.</p>
       </div>
       <MonthlySetupForm
         defaultValues={
           existingSetup
-            ? {
-                month: existingSetup.month,
-                year: existingSetup.year,
-                employmentType: existingSetup.employment_type,
-                fullTimeTarget: Number(existingSetup.full_time_target),
-                fullTimeRosteredDays: Number(existingSetup.full_time_rostered_days),
-                userRosteredDays: Number(existingSetup.user_rostered_days),
-                gwpTarget: Number(existingSetup.gwp_target),
-                conversionTarget: Number(existingSetup.conversion_target),
-                startingSales: Number(existingSetup.starting_sales),
-                startingContacts: Number(existingSetup.starting_contacts),
-                startingGwpTotal: Number(existingSetup.starting_gwp_total),
-                startingSalesPoints: Number(existingSetup.starting_sales_points),
-              }
+            ? rowToStartingDataInput(existingSetup, baselineContacts, baselineSales)
             : undefined
         }
       />

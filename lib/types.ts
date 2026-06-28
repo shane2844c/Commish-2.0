@@ -7,103 +7,129 @@ export type Profile = {
   created_at: string;
 };
 
-export type MonthlySetupRow = {
+export type ConsultantMonthRow = {
   id: string;
   user_id: string;
   month: number;
   year: number;
   employment_type: EmploymentType;
   full_time_target: number;
+  full_time_points_target: number;
   full_time_rostered_days: number;
   user_rostered_days: number;
-  gwp_target: number;
-  conversion_target: number;
-  starting_sales: number;
-  starting_contacts: number;
-  starting_gwp_total: number;
-  starting_sales_points: number;
+  inbound_target: number;
+  outbound_target: number;
+  transfer_target: number;
   created_at: string;
 };
 
-export type DailyEntryRow = {
+export type DailyContactEntryRow = {
   id: string;
-  user_id: string;
-  monthly_setup_id: string;
-  entry_date: string;
-  contacts: number;
-  sales: number;
-  gwp_total: number;
+  consultant_month_id: string;
+  entry_date: string | null;
+  source: "baseline" | "daily" | "adjustment";
+  inbound_contacts: number;
+  outbound_contacts: number;
+  transfer_contacts: number;
+  created_at: string;
+};
+
+export type SalesEntryRow = {
+  id: string;
+  consultant_month_id: string;
+  entry_date: string | null;
+  source: "baseline" | "daily" | "adjustment";
+  actual_sales: number;
   sales_points: number;
+  gwp_amount: number;
   notes: string | null;
   created_at: string;
 };
 
-export type MonthlySetup = {
+export type StartingDataInput = {
+  month: number;
+  year: number;
+  employmentType: EmploymentType;
   fullTimeTarget: number;
+  fullTimePointsTarget: number;
   fullTimeRosteredDays: number;
   userRosteredDays: number;
-  startingSales: number;
-  startingContacts: number;
-  startingGwpTotal: number;
+  inboundTarget: number;
+  outboundTarget: number;
+  transferTarget: number;
+  startingInboundContacts: number;
+  startingOutboundContacts: number;
+  startingTransferContacts: number;
+  startingActualSales: number;
   startingSalesPoints: number;
-  gwpTarget: number;
+  startingAverageGwp: number;
 };
 
-export type DailyEntry = {
-  entryDate: string;
-  contacts: number;
-  sales: number;
-  gwpTotal: number;
-  salesPoints: number;
-};
-
-export type DashboardStats = {
-  adjustedTarget: number;
-  mtdSales: number;
-  mtdContacts: number;
-  mtdGwpTotal: number;
-  mtdSalesPoints: number;
-  averageGwp: number;
-  percentageToTarget: number;
-  salesNeeded: number;
-  workedDaysSoFar: number;
-  remainingRosteredDays: number;
-  salesNeededPerRemainingDay: number;
-  conversionRate: number;
+export type ConsultantPerformanceRow = {
+  consultant_month_id: string;
+  user_id: string;
+  month: number;
+  year: number;
+  eligible_contacts: number;
+  mtd_sales: number;
+  mtd_conversion_rate: number;
+  mtd_target_conversion: number;
+  percent_to_target_conversion: number;
+  mtd_conversion_multiplier: number;
+  mtd_total_sales_points: number;
+  points_target: number;
+  mtd_total_gwp: number;
+  average_gwp: number;
+  base_dpp: number;
+  gwp_payable_per_point: number;
+  mtd_dpp: number;
+  mtd_commission: number;
+  completed_rostered_days: number;
+  total_rostered_days: number;
+  projected_total_sales_points: number;
+  projected_dpp: number;
+  projected_gwp_payable_per_point: number;
+  projected_conversion_multiplier: number;
+  projected_commission: number;
 };
 
 export type LeaderboardRow = {
   rank: number;
   userId: string;
   name: string;
-  mtdSales: number;
-  adjustedTarget: number;
-  percentageToTarget: number;
+  mtdCommission: number;
+  projectedCommission: number;
+  mtdTotalSalesPoints: number;
+  mtdDpp: number;
   averageGwp: number;
-  salesNeeded: number;
-  salesNeededPerRemainingDay: number;
+  percentToTargetConversion: number;
 };
 
-export function rowToMonthlySetup(row: MonthlySetupRow): MonthlySetup {
-  return {
-    fullTimeTarget: Number(row.full_time_target),
-    fullTimeRosteredDays: Number(row.full_time_rostered_days),
-    userRosteredDays: Number(row.user_rostered_days),
-    startingSales: Number(row.starting_sales),
-    startingContacts: Number(row.starting_contacts),
-    startingGwpTotal: Number(row.starting_gwp_total),
-    startingSalesPoints: Number(row.starting_sales_points),
-    gwpTarget: Number(row.gwp_target),
-  };
-}
+export function rowToStartingDataInput(
+  monthRow: ConsultantMonthRow,
+  baselineContacts: DailyContactEntryRow | null,
+  baselineSales: SalesEntryRow | null
+): StartingDataInput {
+  const startingActualSales = Number(baselineSales?.actual_sales ?? 0);
+  const startingGwpAmount = Number(baselineSales?.gwp_amount ?? 0);
 
-export function rowToDailyEntry(row: DailyEntryRow): DailyEntry {
   return {
-    entryDate: row.entry_date,
-    contacts: Number(row.contacts),
-    sales: Number(row.sales),
-    gwpTotal: Number(row.gwp_total),
-    salesPoints: Number(row.sales_points),
+    month: Number(monthRow.month),
+    year: Number(monthRow.year),
+    employmentType: monthRow.employment_type,
+    fullTimeTarget: Number(monthRow.full_time_target),
+    fullTimePointsTarget: Number(monthRow.full_time_points_target),
+    fullTimeRosteredDays: Number(monthRow.full_time_rostered_days),
+    userRosteredDays: Number(monthRow.user_rostered_days),
+    inboundTarget: Number(monthRow.inbound_target),
+    outboundTarget: Number(monthRow.outbound_target),
+    transferTarget: Number(monthRow.transfer_target),
+    startingInboundContacts: Number(baselineContacts?.inbound_contacts ?? 0),
+    startingOutboundContacts: Number(baselineContacts?.outbound_contacts ?? 0),
+    startingTransferContacts: Number(baselineContacts?.transfer_contacts ?? 0),
+    startingActualSales,
+    startingSalesPoints: Number(baselineSales?.sales_points ?? 0),
+    startingAverageGwp: startingActualSales > 0 ? startingGwpAmount / startingActualSales : 0,
   };
 }
 

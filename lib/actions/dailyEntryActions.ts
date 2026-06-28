@@ -30,71 +30,117 @@ export async function saveDailyEntry(
   }
 
   try {
-    const monthlySetupId = String(formData.get("monthlySetupId") ?? "");
+    const consultantMonthId = String(formData.get("consultantMonthId") ?? "");
     const entryDate = String(formData.get("entryDate") ?? "");
-    const contacts = parseNumber(formData.get("contacts") || "0", "Contacts");
-    const sales = parseNumber(formData.get("sales") || "0", "Sales");
-    const gwpTotal = parseNumber(formData.get("gwpTotal") || "0", "GWP total");
+    const inboundContacts = parseNumber(formData.get("inboundContacts") || "0", "Inbound contacts");
+    const outboundContacts = parseNumber(
+      formData.get("outboundContacts") || "0",
+      "Outbound contacts"
+    );
+    const transferContacts = parseNumber(
+      formData.get("transferContacts") || "0",
+      "Transfer contacts"
+    );
+    const actualSales = parseNumber(formData.get("actualSales") || "0", "Actual sales");
     const salesPoints = parseNumber(formData.get("salesPoints") || "0", "Sales points");
+    const averageGwp = parseNumber(formData.get("averageGwp") || "0", "Average GWP");
+    const gwpAmount = actualSales * averageGwp;
     const notes = String(formData.get("notes") ?? "").trim() || null;
 
-    if (!monthlySetupId || !entryDate) {
-      return { error: "Monthly setup and date are required." };
+    if (!consultantMonthId || !entryDate) {
+      return { error: "Consultant month and date are required." };
     }
 
-    if ([contacts, sales, gwpTotal, salesPoints].some((value) => value < 0)) {
+    if (
+      [inboundContacts, outboundContacts, transferContacts, actualSales, averageGwp, salesPoints].some(
+        (value) => value < 0
+      )
+    ) {
       return { error: "Values cannot be negative." };
     }
 
-    const { data: setup, error: setupError } = await supabase
-      .from("monthly_setups")
+    const { data: month, error: monthError } = await supabase
+      .from("consultant_months")
       .select("id")
-      .eq("id", monthlySetupId)
+      .eq("id", consultantMonthId)
       .eq("user_id", user.id)
       .single();
 
-    if (setupError || !setup) {
-      return { error: "Monthly setup not found." };
+    if (monthError || !month) {
+      return { error: "Month setup not found." };
     }
 
-    const { data: existing } = await supabase
-      .from("daily_entries")
+    const { data: existingContacts } = await supabase
+      .from("daily_contact_entries")
       .select("id")
-      .eq("monthly_setup_id", monthlySetupId)
+      .eq("consultant_month_id", consultantMonthId)
       .eq("entry_date", entryDate)
-      .eq("user_id", user.id)
+      .eq("source", "daily")
       .maybeSingle();
 
-    if (existing) {
-      const { error } = await supabase
-        .from("daily_entries")
+    if (existingContacts) {
+      const { error: contactError } = await supabase
+        .from("daily_contact_entries")
         .update({
-          contacts,
-          sales,
-          gwp_total: gwpTotal,
-          sales_points: salesPoints,
-          notes,
+          inbound_contacts: inboundContacts,
+          outbound_contacts: outboundContacts,
+          transfer_contacts: transferContacts,
         })
-        .eq("id", existing.id)
-        .eq("user_id", user.id);
+        .eq("id", existingContacts.id);
 
-      if (error) {
-        return { error: error.message };
+      if (contactError) {
+        return { error: contactError.message };
       }
     } else {
-      const { error } = await supabase.from("daily_entries").insert({
-        user_id: user.id,
-        monthly_setup_id: monthlySetupId,
+      const { error: contactError } = await supabase.from("daily_contact_entries").insert({
+        consultant_month_id: consultantMonthId,
         entry_date: entryDate,
-        contacts,
-        sales,
-        gwp_total: gwpTotal,
+        source: "daily",
+        inbound_contacts: inboundContacts,
+        outbound_contacts: outboundContacts,
+        transfer_contacts: transferContacts,
+      });
+
+      if (contactError) {
+        return { error: contactError.message };
+      }
+    }
+
+    const { data: existingSales } = await supabase
+      .from("sales_entries")
+      .select("id")
+      .eq("consultant_month_id", consultantMonthId)
+      .eq("entry_date", entryDate)
+      .eq("source", "daily")
+      .maybeSingle();
+
+    if (existingSales) {
+      const { error: salesError } = await supabase
+        .from("sales_entries")
+        .update({
+          actual_sales: actualSales,
+          sales_points: salesPoints,
+          gwp_amount: gwpAmount,
+          notes,
+        })
+        .eq("id", existingSales.id);
+
+      if (salesError) {
+        return { error: salesError.message };
+      }
+    } else {
+      const { error: salesError } = await supabase.from("sales_entries").insert({
+        consultant_month_id: consultantMonthId,
+        entry_date: entryDate,
+        source: "daily",
+        actual_sales: actualSales,
         sales_points: salesPoints,
+        gwp_amount: gwpAmount,
         notes,
       });
 
-      if (error) {
-        return { error: error.message };
+      if (salesError) {
+        return { error: salesError.message };
       }
     }
   } catch (err) {
@@ -116,14 +162,25 @@ export async function deleteDailyEntry(entryId: string): Promise<DailyEntryActio
     return { error: "You must be logged in." };
   }
 
-  const { error } = await supabase
-    .from("daily_entries")
-    .delete()
+  const { data: salesEntry } = await supabase
+    .from("sales_entries")
+    .select("consultant_month_id, entry_date")
     .eq("id", entryId)
-    .eq("user_id", user.id);
+    .maybeSingle();
+
+  const { error } = await supabase.from("sales_entries").delete().eq("id", entryId);
 
   if (error) {
     return { error: error.message };
+  }
+
+  if (salesEntry?.consultant_month_id && salesEntry.entry_date) {
+    await supabase
+      .from("daily_contact_entries")
+      .delete()
+      .eq("consultant_month_id", salesEntry.consultant_month_id)
+      .eq("entry_date", salesEntry.entry_date)
+      .eq("source", "daily");
   }
 
   revalidatePath("/dashboard");

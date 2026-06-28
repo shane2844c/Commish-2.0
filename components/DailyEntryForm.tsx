@@ -4,10 +4,10 @@ import { useActionState, useEffect } from "react";
 import { saveDailyEntry } from "@/lib/actions/dailyEntryActions";
 
 type DailyEntryFormProps = {
-  monthlySetupId: string;
+  consultantMonthId: string;
 };
 
-export default function DailyEntryForm({ monthlySetupId }: DailyEntryFormProps) {
+export default function DailyEntryForm({ consultantMonthId }: DailyEntryFormProps) {
   const today = new Date().toISOString().split("T")[0];
   const [state, formAction, pending] = useActionState(saveDailyEntry, {});
 
@@ -21,27 +21,32 @@ export default function DailyEntryForm({ monthlySetupId }: DailyEntryFormProps) 
   }, [state.success, today]);
 
   const inputClass =
-    "mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500";
-  const labelClass = "block text-sm font-medium text-gray-700";
+    "mt-1 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[#dbe9fb]";
+  const labelClass = "block text-sm font-semibold text-[var(--muted)]";
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-gray-900">Log Daily Entry</h2>
+    <div className="rounded-xl border border-[var(--border)] bg-white p-6 shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-[var(--foreground)]">Daily Update</h2>
+        <span className="rounded-full bg-[var(--brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--brand)]">
+          Enter Daily Figures
+        </span>
+      </div>
 
       {state.error && (
-        <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-red-200 bg-[var(--error-soft)] px-4 py-3 text-sm text-red-700">
           {state.error}
         </div>
       )}
 
       {state.success && (
-        <div className="mt-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+        <div className="mt-4 rounded-lg border border-green-200 bg-[var(--success-soft)] px-4 py-3 text-sm text-green-700">
           Entry saved successfully.
         </div>
       )}
 
       <form id="daily-entry-form" action={formAction} className="mt-4 space-y-4">
-        <input type="hidden" name="monthlySetupId" value={monthlySetupId} />
+        <input type="hidden" name="consultantMonthId" value={consultantMonthId} />
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
@@ -58,12 +63,12 @@ export default function DailyEntryForm({ monthlySetupId }: DailyEntryFormProps) 
             />
           </div>
           <div>
-            <label htmlFor="contacts" className={labelClass}>
-              Contacts
+            <label htmlFor="inboundContacts" className={labelClass}>
+              Inbound Contacts
             </label>
             <input
-              id="contacts"
-              name="contacts"
+              id="inboundContacts"
+              name="inboundContacts"
               type="number"
               step="0.01"
               min="0"
@@ -73,12 +78,12 @@ export default function DailyEntryForm({ monthlySetupId }: DailyEntryFormProps) 
             />
           </div>
           <div>
-            <label htmlFor="sales" className={labelClass}>
-              Sales
+            <label htmlFor="outboundContacts" className={labelClass}>
+              Outbound Contacts
             </label>
             <input
-              id="sales"
-              name="sales"
+              id="outboundContacts"
+              name="outboundContacts"
               type="number"
               step="0.01"
               min="0"
@@ -88,12 +93,42 @@ export default function DailyEntryForm({ monthlySetupId }: DailyEntryFormProps) 
             />
           </div>
           <div>
-            <label htmlFor="gwpTotal" className={labelClass}>
-              GWP Total
+            <label htmlFor="transferContacts" className={labelClass}>
+              Transfer Contacts
             </label>
             <input
-              id="gwpTotal"
-              name="gwpTotal"
+              id="transferContacts"
+              name="transferContacts"
+              type="number"
+              step="0.01"
+              min="0"
+              defaultValue="0"
+              className={inputClass}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="actualSales" className={labelClass}>
+              Actual Sales
+            </label>
+            <input
+              id="actualSales"
+              name="actualSales"
+              type="number"
+              step="0.01"
+              min="0"
+              defaultValue="0"
+              className={inputClass}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="averageGwp" className={labelClass}>
+              Average GWP
+            </label>
+            <input
+              id="averageGwp"
+              name="averageGwp"
               type="number"
               step="0.01"
               min="0"
@@ -133,7 +168,7 @@ export default function DailyEntryForm({ monthlySetupId }: DailyEntryFormProps) 
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-gray-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+          className="rounded-lg bg-[var(--brand)] px-6 py-2.5 text-sm font-medium text-white hover:bg-[var(--brand-dark)] disabled:opacity-50"
         >
           {pending ? "Saving..." : "Save Entry"}
         </button>

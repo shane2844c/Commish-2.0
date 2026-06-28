@@ -1,14 +1,10 @@
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import LeaderboardTable from "@/components/LeaderboardTable";
-import { calculateDashboardStats } from "@/lib/calculations";
 import { createClient } from "@/lib/supabase/server";
 import {
   getCurrentMonthYear,
-  rowToDailyEntry,
-  rowToMonthlySetup,
   type LeaderboardRow,
-  type MonthlySetupRow,
   type Profile,
 } from "@/lib/types";
 
@@ -30,27 +26,14 @@ export default async function LeaderboardPage() {
 
   const { month, year } = getCurrentMonthYear();
 
-  const { data: setups } = await supabase
-    .from("monthly_setups")
+  const { data: performances } = await supabase
+    .from("v_consultant_performance")
     .select("*")
     .eq("month", month)
     .eq("year", year);
 
-  const setupList: MonthlySetupRow[] = setups ?? [];
-
-  const setupIds = setupList.map((setup) => setup.id);
-  const userIds = setupList.map((setup) => setup.user_id);
-
-  let allEntries: { monthly_setup_id: string; entry_date: string; contacts: number; sales: number; gwp_total: number; sales_points: number }[] = [];
-
-  if (setupIds.length > 0) {
-    const { data: entries } = await supabase
-      .from("daily_entries")
-      .select("monthly_setup_id, entry_date, contacts, sales, gwp_total, sales_points")
-      .in("monthly_setup_id", setupIds);
-
-    allEntries = entries ?? [];
-  }
+  const performanceRows = performances ?? [];
+  const userIds = performanceRows.map((row) => row.user_id);
 
   let profiles: Profile[] = [];
 
@@ -65,41 +48,23 @@ export default async function LeaderboardPage() {
 
   const profileMap = new Map(profiles.map((p) => [p.id, p]));
 
-  const leaderboardRows: LeaderboardRow[] = setupList
-    .map((setup) => {
-      const setupEntries = allEntries
-        .filter((entry) => entry.monthly_setup_id === setup.id)
-        .map((entry) =>
-          rowToDailyEntry({
-            id: "",
-            user_id: setup.user_id,
-            monthly_setup_id: setup.id,
-            entry_date: entry.entry_date,
-            contacts: entry.contacts,
-            sales: entry.sales,
-            gwp_total: entry.gwp_total,
-            sales_points: entry.sales_points,
-            notes: null,
-            created_at: "",
-          })
-        );
-
-      const stats = calculateDashboardStats(rowToMonthlySetup(setup), setupEntries);
-      const userProfile = profileMap.get(setup.user_id);
+  const leaderboardRows: LeaderboardRow[] = performanceRows
+    .map((row) => {
+      const userProfile = profileMap.get(row.user_id);
 
       return {
-        userId: setup.user_id,
+        userId: row.user_id,
         name: userProfile?.full_name || userProfile?.email || "Unknown",
-        mtdSales: stats.mtdSales,
-        adjustedTarget: stats.adjustedTarget,
-        percentageToTarget: stats.percentageToTarget,
-        averageGwp: stats.averageGwp,
-        salesNeeded: stats.salesNeeded,
-        salesNeededPerRemainingDay: stats.salesNeededPerRemainingDay,
+        mtdCommission: Number(row.mtd_commission ?? 0),
+        projectedCommission: Number(row.projected_commission ?? 0),
+        mtdTotalSalesPoints: Number(row.mtd_total_sales_points ?? 0),
+        mtdDpp: Number(row.mtd_dpp ?? 0),
+        averageGwp: Number(row.average_gwp ?? 0),
+        percentToTargetConversion: Number(row.percent_to_target_conversion ?? 0),
         rank: 0,
       };
     })
-    .sort((a, b) => b.percentageToTarget - a.percentageToTarget)
+    .sort((a, b) => b.mtdCommission - a.mtdCommission)
     .map((row, index) => ({ ...row, rank: index + 1 }));
 
   const monthLabel = new Date(year, month - 1).toLocaleString("default", {
@@ -108,11 +73,11 @@ export default async function LeaderboardPage() {
   });
 
   return (
-    <DashboardShell userName={profile?.full_name}>
+    <DashboardShell userName={profile?.full_name} activeItem="leaderboard">
       <div className="mb-8">
-        <h2 className="text-2xl font-semibold text-gray-900">Leaderboard</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Ranked by % to adjusted target — {monthLabel}
+        <h2 className="text-3xl font-semibold text-[var(--foreground)]">Leaderboard</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Ranked by MTD commission — {monthLabel}
         </p>
       </div>
       <LeaderboardTable rows={leaderboardRows} />
