@@ -1,17 +1,50 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { signIn, signUp } from "@/lib/actions/authActions";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+
+type AuthFormState = {
+  error?: string;
+};
 
 export default function LoginForm() {
+  const router = useRouter();
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [loginState, loginAction, loginPending] = useActionState(signIn, {});
-  const [signupState, signupAction, signupPending] = useActionState(signUp, {});
+  const [state, setState] = useState<AuthFormState>({});
+  const [pending, setPending] = useState(false);
 
   const isSignup = mode === "signup";
-  const state = isSignup ? signupState : loginState;
-  const action = isSignup ? signupAction : loginAction;
-  const pending = isSignup ? signupPending : loginPending;
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setState({});
+
+    const endpoint = isSignup ? "/api/auth/signup" : "/api/auth/login";
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: new FormData(event.currentTarget),
+      });
+      const result = (await response.json()) as AuthFormState & {
+        success?: boolean;
+        redirectTo?: string;
+      };
+
+      if (!response.ok || result.error) {
+        setState({ error: result.error ?? "Authentication failed." });
+        return;
+      }
+
+      router.push(result.redirectTo ?? "/dashboard");
+      router.refresh();
+    } catch {
+      setState({ error: "Authentication failed. Please try again." });
+    } finally {
+      setPending(false);
+    }
+  }
 
   const inputClass =
     "mt-1 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[#dbe9fb]";
@@ -54,7 +87,7 @@ export default function LoginForm() {
           </div>
         )}
 
-        <form action={action} className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           {isSignup && (
             <div>
               <label htmlFor="fullName" className={labelClass}>

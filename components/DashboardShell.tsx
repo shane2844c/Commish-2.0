@@ -1,4 +1,4 @@
- "use client";
+"use client";
 
 import Link from "next/link";
 import Image from "next/image";
@@ -6,10 +6,10 @@ import { useState } from "react";
 
 type NavItemKey =
   | "dashboard"
-  | "daily-update"
-  | "starting-data"
-  | "compliance"
   | "leaderboard"
+  | "daily-contacts"
+  | "manual-input"
+  | "compliance"
   | "settings";
 
 type DashboardShellProps = {
@@ -20,10 +20,10 @@ type DashboardShellProps = {
 
 const navItems: { key: NavItemKey; label: string; href: string }[] = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-  { key: "daily-update", label: "Daily Update", href: "/daily-update" },
-  { key: "starting-data", label: "Starting Data", href: "/setup" },
-  { key: "compliance", label: "Compliance", href: "/compliance" },
+  { key: "daily-contacts", label: "Daily Contacts", href: "/daily-contacts" },
+  { key: "manual-input", label: "Manual Input", href: "/setup" },
   { key: "leaderboard", label: "Leaderboard", href: "/leaderboard" },
+  { key: "compliance", label: "Compliance", href: "/compliance" },
   { key: "settings", label: "Settings", href: "/settings" },
 ];
 

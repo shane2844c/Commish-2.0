@@ -4,6 +4,7 @@ import LeaderboardTable from "@/components/LeaderboardTable";
 import { createClient } from "@/lib/supabase/server";
 import {
   getCurrentMonthYear,
+  toMonthStart,
   type LeaderboardRow,
   type Profile,
 } from "@/lib/types";
@@ -25,12 +26,12 @@ export default async function LeaderboardPage() {
     .single();
 
   const { month, year } = getCurrentMonthYear();
+  const monthStart = toMonthStart(month, year);
 
   const { data: performances } = await supabase
     .from("v_consultant_performance")
     .select("*")
-    .eq("month", month)
-    .eq("year", year);
+    .eq("month_start", monthStart);
 
   const performanceRows = performances ?? [];
   const userIds = performanceRows.map((row) => row.user_id);
