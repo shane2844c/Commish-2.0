@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import StatCard from "@/components/StatCard";
+import { applyComplianceToCommission } from "@/lib/compliance/calculate";
+import { fetchComplianceMetricsForMonth } from "@/lib/compliance/queries";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
 import { fetchConsultantPerformance } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
@@ -29,6 +31,19 @@ export default async function DashboardPage() {
   const performance = setup
     ? await fetchConsultantPerformance(supabase, setup as ConsultantMonthRow)
     : null;
+
+  const compliance = setup
+    ? await fetchComplianceMetricsForMonth(supabase, user.id, setup.id, month, year)
+    : null;
+
+  const adjustedCommission =
+    performance && compliance
+      ? applyComplianceToCommission(
+          performance.mtdCommission,
+          performance.projectedCommission,
+          compliance.compliancePayableRate
+        )
+      : null;
 
   const monthLabel = new Date(year, month - 1).toLocaleString("default", {
     month: "long",
@@ -73,6 +88,12 @@ export default async function DashboardPage() {
             >
               Manual Input
             </Link>
+            <Link
+              href="/compliance"
+              className="rounded-lg border border-[var(--brand)] px-3 py-1.5 text-xs font-medium text-[var(--brand)] hover:bg-[var(--brand-soft)]"
+            >
+              Compliance
+            </Link>
           </div>
 
           <div>
@@ -93,10 +114,38 @@ export default async function DashboardPage() {
               <StatCard
                 label="MTD Commission"
                 value={formatCurrency(performance?.mtdCommission ?? 0)}
-                subtext={`Multiplier ${formatNumber(performance?.mtdConversionMultiplier ?? 0, 2)}x`}
+                subtext={`Before QA · Multiplier ${formatNumber(performance?.mtdConversionMultiplier ?? 0, 2)}x`}
               />
             </div>
           </div>
+
+          {compliance && (
+            <div className="mt-6">
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
+                QA Compliance
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                  label="QA Average"
+                  value={
+                    compliance.qaCallsMarked > 0
+                      ? formatPercent(compliance.qaAverage / 100)
+                      : "Pending"
+                  }
+                />
+                <StatCard label="QA Result" value={compliance.qaResult} />
+                <StatCard
+                  label="Compliance Payable Rate"
+                  value={compliance.compliancePayableRateLabel}
+                />
+                <StatCard
+                  label="Final Payable MTD Commission"
+                  value={formatCurrency(adjustedCommission?.complianceAdjustedMtdCommission ?? 0)}
+                  subtext="After QA compliance"
+                />
+              </div>
+            </div>
+          )}
 
           {(performance?.projectionDays ?? 0) > 0 && (
           <div className="mt-6">
@@ -116,7 +165,16 @@ export default async function DashboardPage() {
                 label="Projected Commission"
                 value={formatCurrency(performance?.projectedCommission ?? 0)}
                 highlight="projected"
+                subtext="Before QA"
               />
+              {adjustedCommission && (
+                <StatCard
+                  label="Projected Final Commission"
+                  value={formatCurrency(adjustedCommission.complianceAdjustedProjectedCommission)}
+                  highlight="projected"
+                  subtext="After QA compliance"
+                />
+              )}
             </div>
           </div>
           )}

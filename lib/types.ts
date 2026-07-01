@@ -55,6 +55,16 @@ export type ConsultantMonthMetricsRow = {
   projected_gwp_payable_per_point: number;
   projected_conversion_multiplier: number;
   projected_commission: number;
+  qa_calls_marked: number;
+  qa_average: number;
+  qa_complete: boolean;
+  qa_passed: boolean;
+  qa_failed: boolean;
+  compliance_payable_rate: number;
+  current_fail_streak: number;
+  commission_ineligible: boolean;
+  compliance_adjusted_mtd_commission: number;
+  compliance_adjusted_projected_commission: number;
   updated_at: string;
 };
 
@@ -233,6 +243,38 @@ export type AdjustmentHistoryRow = {
   salesPointsDelta: number;
 };
 
+export type ComplianceCallScoreRow = {
+  id: string;
+  consultant_month_id: string;
+  user_id: string;
+  call_number: number;
+  score: number;
+  notes: string | null;
+  created_at: string;
+  updated_at?: string;
+};
+
+export type ComplianceMetrics = {
+  qaCallsMarked: number;
+  qaAverage: number;
+  qaComplete: boolean;
+  qaPassed: boolean;
+  qaFailed: boolean;
+  qaResult: "Pending" | "Pass" | "Fail";
+  compliancePayableRate: number;
+  compliancePayableRateLabel: string;
+  currentFailStreak: number;
+  previousThreeMonthsAllFailed: boolean;
+  commissionIneligible: boolean;
+  nextMonthEligibilityWarning: string | null;
+};
+
+export type ComplianceCallFormEntry = {
+  callNumber: number;
+  score: string;
+  notes: string;
+};
+
 export type ConsultantPerformanceStats = {
   consultantMonthId: string;
   userId: string;
@@ -261,6 +303,9 @@ export type ConsultantPerformanceStats = {
   projectedGwpAcceleratorDpp: number;
   projectedConversionMultiplier: number;
   projectedCommission: number;
+  compliance?: ComplianceMetrics;
+  complianceAdjustedMtdCommission?: number;
+  complianceAdjustedProjectedCommission?: number;
 };
 
 export type LeaderboardRow = {
@@ -278,6 +323,11 @@ export type LeaderboardRow = {
   mtdDpp: number;
   gwpAcceleratorPerPoint: number;
   mtdCommission: number;
+  qaAverage: number;
+  compliancePayableRate: number;
+  compliancePayableRateLabel: string;
+  complianceAdjustedMtdCommission: number;
+  complianceAdjustedProjectedCommission: number;
   projectedTotalSalesPoints: number;
   projectedDpp: number;
   projectedGwpPayablePerPoint: number;

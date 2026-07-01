@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import UsernameForm from "@/components/UsernameForm";
 import { hasUsername } from "@/lib/profiles/usernameValidation";
 import { createClient } from "@/lib/supabase/server";
+import { logSupabaseError } from "@/lib/supabase/logPayload";
 
 export default async function SetupUsernamePage() {
   const supabase = await createClient();
@@ -13,13 +14,15 @@ export default async function SetupUsernamePage() {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("username")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (hasUsername(profile?.username)) {
+  if (profileError) {
+    logSupabaseError("profiles (setup-username)", profileError);
+  } else if (hasUsername(profile?.username)) {
     redirect("/dashboard");
   }
 

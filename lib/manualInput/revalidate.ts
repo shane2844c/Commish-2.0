@@ -5,4 +5,5 @@ export function revalidatePerformanceViews() {
   revalidatePath("/leaderboard");
   revalidatePath("/daily-contacts");
   revalidatePath("/setup");
+  revalidatePath("/compliance");
 }

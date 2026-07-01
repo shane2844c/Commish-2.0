@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ConsultantMonthUpsert } from "@/lib/types";
 import { logSupabaseError } from "@/lib/supabase/logPayload";
+import { isMissingSchemaError } from "@/lib/supabase/schemaErrors";
 
 type LegacyConsultantMonthUpsert = {
   user_id: string;
@@ -12,15 +13,6 @@ type LegacyConsultantMonthUpsert = {
   total_rostered_days_this_month: number;
   completed_rostered_days_so_far: number;
 };
-
-function isMissingColumnError(error: { message?: string; code?: string }): boolean {
-  const message = error.message ?? "";
-  return (
-    error.code === "PGRST204" ||
-    message.includes("schema cache") ||
-    message.includes("Could not find the")
-  );
-}
 
 function toLegacyConsultantMonthPayload(
   payload: ConsultantMonthUpsert
@@ -51,7 +43,7 @@ export async function upsertConsultantMonthRecord(
     return fullResult;
   }
 
-  if (!isMissingColumnError(fullResult.error)) {
+  if (!isMissingSchemaError(fullResult.error)) {
     logSupabaseError("consultant_months", fullResult.error);
     return fullResult;
   }

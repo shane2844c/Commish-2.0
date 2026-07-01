@@ -36,6 +36,13 @@ function rowClassName(row: LeaderboardRow, currentUserId: string): string {
   return classes.join(" ");
 }
 
+function formatQaAverage(value: number): string {
+  if (value <= 0) {
+    return "—";
+  }
+  return `${value.toFixed(1)}%`;
+}
+
 export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTableProps) {
   if (rows.length === 0) {
     return (
@@ -59,10 +66,22 @@ export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTab
                 Consultant
               </th>
               <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                MTD Commission
+                MTD Commission Before QA
               </th>
               <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Projected Commission
+                QA Average
+              </th>
+              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
+                Compliance Payable Rate
+              </th>
+              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
+                Final Payable MTD Commission
+              </th>
+              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
+                Projected Final Commission
+              </th>
+              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
+                Projected Commission Before QA
               </th>
               <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
                 MTD Total Sales Points
@@ -137,8 +156,20 @@ export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTab
                       )}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-[var(--brand)]">
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
                     {formatCurrency(row.mtdCommission)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
+                    {formatQaAverage(row.qaAverage)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
+                    {row.compliancePayableRateLabel}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-[var(--brand)]">
+                    {formatCurrency(row.complianceAdjustedMtdCommission)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-[var(--brand)]">
+                    {formatCurrency(row.complianceAdjustedProjectedCommission)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
                     {formatCurrency(row.projectedCommission)}

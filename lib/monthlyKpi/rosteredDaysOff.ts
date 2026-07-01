@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateMonthlyKpis, validateRosteredDayOff } from "@/lib/monthlyKpi/roster";
 import { syncConsultantMonthMetrics } from "@/lib/metrics/syncConsultantMonthMetrics";
 import { logSupabaseError } from "@/lib/supabase/logPayload";
+import { isMissingSchemaError } from "@/lib/supabase/schemaErrors";
 import type {
   ConsultantMonthRow,
   ConsultantRosteredDayOffRow,
@@ -95,6 +96,14 @@ export async function recalculateAndUpdateMonthKpis(
     .eq("id", consultantMonthId);
 
   if (updateError) {
+    if (isMissingSchemaError(updateError)) {
+      console.warn(
+        "consultant_months KPI columns missing — skipping KPI persist. Run supabase/migrations/add_consultant_month_kpi_columns.sql"
+      );
+      console.log("Recalculated monthly KPI (in-memory only):", payload);
+      return { payload };
+    }
+
     logSupabaseError("consultant_months (KPI recalculation)", updateError);
     return { payload: null, error: updateError.message };
   }
