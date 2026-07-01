@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { AppEmptyState, AppPage } from "@/components/app";
 import StatCard from "@/components/StatCard";
 import { applyComplianceToCommission } from "@/lib/compliance/calculate";
 import { fetchComplianceMetricsForMonth } from "@/lib/compliance/queries";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
+import { APP_ROUTES } from "@/lib/app/routes";
 import { fetchConsultantPerformance } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMonthYear, type ConsultantMonthRow } from "@/lib/types";
@@ -15,7 +16,7 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    throw new Error("Unauthenticated");
   }
 
   const { month, year } = getCurrentMonthYear();
@@ -51,25 +52,14 @@ export default async function DashboardPage() {
   });
 
   return (
-    <>
-      <div className="mb-8">
-        <h2 className="text-3xl font-semibold text-[var(--foreground)]">Dashboard</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">{monthLabel}</p>
-      </div>
-
+    <AppPage title="Dashboard" description={monthLabel}>
       {!setup ? (
-        <div className="rounded-xl border border-[var(--border)] bg-white p-8 text-center shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
-          <h3 className="text-lg font-medium text-[var(--foreground)]">No monthly setup yet</h3>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            Complete your monthly setup to start tracking performance.
-          </p>
-          <Link
-            href="/setup"
-            className="mt-6 inline-block rounded-lg bg-[var(--brand)] px-6 py-2.5 text-sm font-medium text-white hover:bg-[var(--brand-dark)]"
-          >
-            Go to Manual Input
-          </Link>
-        </div>
+        <AppEmptyState
+          title="No monthly setup yet"
+          message="Complete your monthly setup to start tracking performance."
+          actionHref={APP_ROUTES.manualInput}
+          actionLabel="Go to Manual Input"
+        />
       ) : (
         <>
           <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--border)] bg-[#f8fbff] px-4 py-3">
@@ -77,19 +67,19 @@ export default async function DashboardPage() {
               Dashboard is read-only. Update figures from Daily Contacts and Manual Input.
             </p>
             <Link
-              href="/daily-contacts"
+              href={APP_ROUTES.dailyContacts}
               className="rounded-lg bg-[var(--brand)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--brand-dark)]"
             >
               Daily Contacts
             </Link>
             <Link
-              href="/setup"
+              href={APP_ROUTES.manualInput}
               className="rounded-lg border border-[var(--brand)] px-3 py-1.5 text-xs font-medium text-[var(--brand)] hover:bg-[var(--brand-soft)]"
             >
               Manual Input
             </Link>
             <Link
-              href="/compliance"
+              href={APP_ROUTES.compliance}
               className="rounded-lg border border-[var(--brand)] px-3 py-1.5 text-xs font-medium text-[var(--brand)] hover:bg-[var(--brand-soft)]"
             >
               Compliance
@@ -180,6 +170,6 @@ export default async function DashboardPage() {
           )}
         </>
       )}
-    </>
+    </AppPage>
   );
 }

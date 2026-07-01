@@ -1,3 +1,4 @@
+import { AppPage } from "@/components/app";
 import ManualInputClient from "@/components/ManualInputClient";
 import {
   contactTypeDisplayName,
@@ -8,7 +9,6 @@ import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
 import { mapRosteredDayOffRows } from "@/lib/monthlyKpi/rosteredDaysOff";
 import { fetchContactTypes } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
 import {
   getCurrentMonthYear,
   rowToManualInputDefaults,
@@ -26,7 +26,7 @@ export default async function SetupPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    throw new Error("Unauthenticated");
   }
 
   const contactTypes = mapContactTypeRows(await fetchContactTypes(supabase));
@@ -109,19 +109,16 @@ export default async function SetupPage() {
   }
 
   return (
-    <>
-      <div className="mb-6">
-        <h2 className="text-3xl font-semibold text-[var(--foreground)]">Manual Input</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Starting baseline and manual adjustments feed central performance calculations.
-        </p>
-      </div>
+    <AppPage
+      title="Manual Input"
+      description="Starting baseline and manual adjustments feed central performance calculations."
+    >
       <ManualInputClient
         consultantMonthId={existingSetup?.id}
         defaultValues={manualDefaults}
         adjustmentHistory={adjustmentHistory}
         contactTypes={contactTypes}
       />
-    </>
+    </AppPage>
   );
 }

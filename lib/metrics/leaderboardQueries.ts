@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatCompliancePayableRateLabel } from "@/lib/compliance/calculate";
-import type { ConsultantMonthMetricsRow, LeaderboardRow, Profile } from "@/lib/types";
+import type { ConsultantMonthMetricsRow, LeaderboardProfileRow, LeaderboardRow } from "@/lib/types";
 
-export function resolveConsultantDisplayName(profile: Pick<Profile, "username"> | undefined): string {
-  const username = profile?.username?.trim();
-  if (username) {
-    return username;
+export function resolveConsultantDisplayName(username: string | null | undefined): string {
+  const trimmed = username?.trim();
+  if (trimmed) {
+    return trimmed;
   }
 
   return "Unnamed Consultant";
@@ -16,32 +16,32 @@ export async function fetchLeaderboardRows(
   month: number,
   year: number
 ): Promise<LeaderboardRow[]> {
-  const { data: metricRows, error: metricsError } = await supabase
-    .from("consultant_month_metrics")
-    .select("*")
-    .eq("month", month)
-    .eq("year", year);
+  const [{ data: metricRows, error: metricsError }, { data: usernameRows, error: usernameError }] =
+    await Promise.all([
+      supabase.from("consultant_month_metrics").select("*").eq("month", month).eq("year", year),
+      supabase.from("leaderboard_profiles").select("id, username"),
+    ]);
 
   if (metricsError) {
     console.error("Failed to fetch consultant_month_metrics:", metricsError.message);
     return [];
   }
 
+  if (usernameError) {
+    console.error("Failed to fetch leaderboard_profiles:", usernameError.message);
+  }
+
   const metrics = (metricRows ?? []) as ConsultantMonthMetricsRow[];
-  console.log("Fetched leaderboard rows:", metrics);
 
   if (metrics.length === 0) {
     return [];
   }
 
-  const userIds = metrics.map((row) => row.user_id);
-  const { data: profileRows } = await supabase
-    .from("profiles")
-    .select("id, username")
-    .in("id", userIds);
-
-  const profileMap = new Map(
-    (profileRows ?? []).map((profile) => [profile.id, profile as Pick<Profile, "id" | "username">])
+  const usernameMap = new Map(
+    ((usernameRows ?? []) as LeaderboardProfileRow[]).map((profile) => [
+      profile.id,
+      profile.username,
+    ])
   );
 
   return metrics.map((row) => {
@@ -52,7 +52,7 @@ export async function fetchLeaderboardRows(
     return {
       userId: row.user_id,
       consultantMonthId: row.consultant_month_id,
-      name: resolveConsultantDisplayName(profileMap.get(row.user_id)),
+      name: resolveConsultantDisplayName(usernameMap.get(row.user_id)),
       mtdTargetConversion: Number(row.mtd_target_conversion),
       mtdConversionRate: Number(row.mtd_conversion_rate),
       percentToTargetConversion: Number(row.percent_to_target_conversion),

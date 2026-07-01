@@ -1,12 +1,16 @@
 import { redirect } from "next/navigation";
-import AppShell from "@/components/AppShell";
+import { AppShell } from "@/components/app";
 import { hasUsername } from "@/lib/profiles/usernameValidation";
 import { createClient } from "@/lib/supabase/server";
 import { logSupabaseError } from "@/lib/supabase/logPayload";
 
 export const dynamic = "force-dynamic";
 
-export default async function ShellLayout({
+/**
+ * Shared layout for every authenticated app route.
+ * AppShell is rendered here only — never import it from page files.
+ */
+export default async function AppLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -27,7 +31,7 @@ export default async function ShellLayout({
     .maybeSingle();
 
   if (profileError) {
-    logSupabaseError("profiles (shell layout)", profileError);
+    logSupabaseError("profiles (app layout)", profileError);
     redirect("/setup-username");
   }
 

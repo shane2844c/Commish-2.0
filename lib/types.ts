@@ -308,6 +308,11 @@ export type ConsultantPerformanceStats = {
   complianceAdjustedProjectedCommission?: number;
 };
 
+export type LeaderboardProfileRow = {
+  id: string;
+  username: string | null;
+};
+
 export type LeaderboardRow = {
   position: number;
   userId: string;

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { APP_ROUTES } from "@/lib/app/routes";
 
 export default function DailyUpdatePage() {
-  redirect("/daily-contacts");
+  redirect(APP_ROUTES.dailyContacts);
 }

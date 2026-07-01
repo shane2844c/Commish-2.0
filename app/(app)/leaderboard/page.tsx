@@ -1,8 +1,8 @@
+import { AppPage } from "@/components/app";
 import LeaderboardClient from "@/components/LeaderboardClient";
 import { fetchLeaderboardRows } from "@/lib/metrics/leaderboardQueries";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMonthYear } from "@/lib/types";
-import { redirect } from "next/navigation";
 
 type LeaderboardPageProps = {
   searchParams: Promise<{ month?: string; year?: string }>;
@@ -15,7 +15,7 @@ export default async function LeaderboardPage({ searchParams }: LeaderboardPageP
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    throw new Error("Unauthenticated");
   }
 
   const params = await searchParams;
@@ -32,14 +32,10 @@ export default async function LeaderboardPage({ searchParams }: LeaderboardPageP
   });
 
   return (
-    <>
-      <div className="mb-8">
-        <h2 className="text-3xl font-semibold text-[var(--foreground)]">Leaderboard</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Ranked by final payable MTD commission after QA compliance. Supporting metrics explain each
-          consultant&apos;s performance.
-        </p>
-      </div>
+    <AppPage
+      title="Leaderboard"
+      description="Ranked by final payable MTD commission after QA compliance. Supporting metrics explain each consultant's performance."
+    >
       <LeaderboardClient
         rows={leaderboardRows}
         month={month}
@@ -47,6 +43,6 @@ export default async function LeaderboardPage({ searchParams }: LeaderboardPageP
         monthLabel={monthLabel}
         currentUserId={user.id}
       />
-    </>
+    </AppPage>
   );
 }

@@ -10,27 +10,46 @@ function formatPerPoint(value: number): string {
   return `$${formatCurrency(value)} / point`;
 }
 
-function positionBadge(position: number): string | null {
-  if (position === 1) return "#1";
-  if (position === 2) return "#2";
-  if (position === 3) return "#3";
+export function getLeaderboardRowClass(position: number): string {
+  if (position === 1) {
+    return "relative overflow-hidden border-2 border-yellow-400 bg-gradient-to-r from-yellow-50 via-amber-100 to-yellow-50 shadow-[0_0_30px_rgba(245,158,11,0.45)]";
+  }
+
+  if (position === 2) {
+    return "border border-slate-300 bg-gradient-to-r from-slate-50 via-slate-100 to-slate-50";
+  }
+
+  if (position === 3) {
+    return "border border-orange-300 bg-gradient-to-r from-orange-50 via-amber-50 to-orange-100";
+  }
+
+  return "border border-slate-200 bg-white";
+}
+
+function positionRankIcon(position: number): string | null {
+  if (position === 1) return "🏆";
+  if (position === 2) return "🥈";
+  if (position === 3) return "🥉";
   return null;
+}
+
+function positionRankLabelClass(position: number): string {
+  if (position === 1) return "text-sm font-bold text-yellow-900";
+  if (position === 2) return "text-sm font-semibold text-slate-800";
+  if (position === 3) return "text-sm font-semibold text-orange-950";
+  return "text-sm font-medium text-[var(--foreground)]";
 }
 
 function rowClassName(row: LeaderboardRow, currentUserId: string): string {
   const isCurrentUser = row.userId === currentUserId;
-  const classes = ["transition-colors"];
+  const classes = [getLeaderboardRowClass(row.position), "transition-colors"];
 
-  if (row.position === 1) {
-    classes.push("bg-[#fff8e6] hover:bg-[#fff3d4] ring-1 ring-inset ring-[#f0c040]/40");
-  } else if (row.position <= 3) {
-    classes.push("bg-[#f7fbff] hover:bg-[#eef6ff]");
-  } else {
+  if (isCurrentUser && row.position > 3) {
+    classes.push("ring-2 ring-inset ring-[var(--brand)] hover:bg-[#f8fbff]");
+  } else if (isCurrentUser && row.position <= 3) {
+    classes.push("outline outline-2 outline-offset-[-2px] outline-[var(--brand)]/35");
+  } else if (row.position > 3) {
     classes.push("hover:bg-[#f8fbff]");
-  }
-
-  if (isCurrentUser) {
-    classes.push("ring-2 ring-inset ring-[var(--brand)] bg-[#eef6ff]/80");
   }
 
   return classes.join(" ");
@@ -42,6 +61,9 @@ function formatQaAverage(value: number): string {
   }
   return `${value.toFixed(1)}%`;
 }
+
+const cellClass =
+  "relative z-10 whitespace-nowrap px-3 py-3 text-sm text-[var(--foreground)]";
 
 export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTableProps) {
   if (rows.length === 0) {
@@ -123,32 +145,48 @@ export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTab
           </thead>
           <tbody className="divide-y divide-[var(--border)] bg-white">
             {rows.map((row) => {
-              const badge = positionBadge(row.position);
               const isCurrentUser = row.userId === currentUserId;
 
               return (
                 <tr key={row.userId} className={rowClassName(row, currentUserId)}>
-                  <td className="whitespace-nowrap px-3 py-3 text-sm font-medium text-[var(--foreground)]">
-                    <div className="flex items-center gap-2">
-                      <span className={row.position === 1 ? "text-base font-bold text-[#b8860b]" : ""}>
-                        {row.position}
-                      </span>
-                      {badge && (
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                            row.position === 1
-                              ? "bg-[#f0c040] text-[#5c4a00]"
-                              : "bg-[var(--brand-soft)] text-[var(--brand)]"
-                          }`}
-                        >
-                          {badge}
+                  <td className={`${cellClass} relative overflow-hidden font-medium`}>
+                    {row.position === 1 && (
+                      <div className="pointer-events-none absolute inset-0 z-0">
+                        <span className="gold-sparkle absolute left-3 top-2 text-base text-yellow-400">
+                          ✦
                         </span>
+                        <span
+                          className="gold-sparkle absolute right-4 top-3 text-base text-amber-400"
+                          style={{ animationDelay: "0.35s" }}
+                        >
+                          ✨
+                        </span>
+                        <span
+                          className="gold-sparkle absolute bottom-2 left-10 text-sm text-yellow-300"
+                          style={{ animationDelay: "0.7s" }}
+                        >
+                          ✧
+                        </span>
+                        <span
+                          className="gold-sparkle absolute bottom-3 right-16 text-sm text-amber-300"
+                          style={{ animationDelay: "1.05s" }}
+                        >
+                          ✦
+                        </span>
+                      </div>
+                    )}
+                    <div className="relative z-10 flex items-center gap-2">
+                      {positionRankIcon(row.position) && (
+                        <span aria-hidden="true">{positionRankIcon(row.position)}</span>
                       )}
+                      <span className={positionRankLabelClass(row.position)}>#{row.position}</span>
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-sm text-[var(--foreground)]">
+                  <td className={cellClass}>
                     <div className="flex items-center gap-2">
-                      <span className={row.position === 1 ? "font-semibold" : ""}>{row.name}</span>
+                      <span className={row.position <= 3 ? "font-semibold text-[var(--foreground)]" : ""}>
+                        {row.name}
+                      </span>
                       {isCurrentUser && (
                         <span className="rounded-full bg-[var(--brand)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                           You
@@ -156,58 +194,32 @@ export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTab
                       )}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatCurrency(row.mtdCommission)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatQaAverage(row.qaAverage)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {row.compliancePayableRateLabel}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-[var(--brand)]">
+                  <td className={`${cellClass} text-right`}>{formatCurrency(row.mtdCommission)}</td>
+                  <td className={`${cellClass} text-right`}>{formatQaAverage(row.qaAverage)}</td>
+                  <td className={`${cellClass} text-right`}>{row.compliancePayableRateLabel}</td>
+                  <td className={`${cellClass} text-right font-semibold text-[var(--brand)]`}>
                     {formatCurrency(row.complianceAdjustedMtdCommission)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-[var(--brand)]">
+                  <td className={`${cellClass} text-right font-semibold text-[var(--brand)]`}>
                     {formatCurrency(row.complianceAdjustedProjectedCommission)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatCurrency(row.projectedCommission)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatCurrency(row.mtdTotalSalesPoints)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatCurrency(row.pointsTarget)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatPercent(row.mtdConversionRate)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatPercent(row.mtdTargetConversion)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatPercent(row.percentToTargetConversion)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
+                  <td className={`${cellClass} text-right`}>{formatCurrency(row.projectedCommission)}</td>
+                  <td className={`${cellClass} text-right`}>{formatCurrency(row.mtdTotalSalesPoints)}</td>
+                  <td className={`${cellClass} text-right`}>{formatCurrency(row.pointsTarget)}</td>
+                  <td className={`${cellClass} text-right`}>{formatPercent(row.mtdConversionRate)}</td>
+                  <td className={`${cellClass} text-right`}>{formatPercent(row.mtdTargetConversion)}</td>
+                  <td className={`${cellClass} text-right`}>{formatPercent(row.percentToTargetConversion)}</td>
+                  <td className={`${cellClass} text-right`}>
                     {formatNumber(row.mtdConversionMultiplier, 2)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatCurrency(row.averageGwp)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatPerPoint(row.gwpAcceleratorPerPoint)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatPerPoint(row.mtdDpp)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
+                  <td className={`${cellClass} text-right`}>{formatCurrency(row.averageGwp)}</td>
+                  <td className={`${cellClass} text-right`}>{formatPerPoint(row.gwpAcceleratorPerPoint)}</td>
+                  <td className={`${cellClass} text-right`}>{formatPerPoint(row.mtdDpp)}</td>
+                  <td className={`${cellClass} text-right`}>
                     {formatCurrency(row.projectedTotalSalesPoints)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
-                    {formatPerPoint(row.projectedDpp)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-[var(--foreground)]">
+                  <td className={`${cellClass} text-right`}>{formatPerPoint(row.projectedDpp)}</td>
+                  <td className={`${cellClass} text-right`}>
                     {formatNumber(row.projectedConversionMultiplier, 2)}
                   </td>
                 </tr>

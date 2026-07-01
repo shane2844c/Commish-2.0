@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { APP_ROUTES } from "@/lib/app/routes";
 
 function getErrorMessage(error: Error & { digest?: string }): string {
   if (error instanceof Error && error.message && error.message !== "[object Event]") {
@@ -45,7 +46,7 @@ export default function ShellError({
           Try again
         </button>
         <Link
-          href="/dashboard"
+          href={APP_ROUTES.dashboard}
           className="rounded-lg border border-[var(--brand)] px-4 py-2 text-sm font-medium text-[var(--brand)] hover:bg-[var(--brand-soft)]"
         >
           Go to Dashboard

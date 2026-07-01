@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
+import { AppEmptyState, AppPage } from "@/components/app";
 import DailyContactsManager from "@/components/DailyContactsManager";
 import {
   dispositionDisplayName,
@@ -11,6 +10,7 @@ import {
   contactTypePointsPerSale,
   mapContactTypeRows,
 } from "@/lib/contactTypes/helpers";
+import { APP_ROUTES } from "@/lib/app/routes";
 import { fetchContactTypes } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMonthYear, type DailyContactEntryRow } from "@/lib/types";
@@ -22,7 +22,7 @@ export default async function DailyContactsPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    throw new Error("Unauthenticated");
   }
 
   const [contactTypes, dispositionRows] = await Promise.all([
@@ -42,23 +42,14 @@ export default async function DailyContactsPage() {
 
   if (!consultantMonth) {
     return (
-      <>
-        <div className="mb-8">
-          <h2 className="text-3xl font-semibold text-[var(--foreground)]">Daily Contacts</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Log daily contact entries from this page.</p>
-        </div>
-        <div className="rounded-xl border border-[var(--border)] bg-white p-8 text-center shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
-          <p className="text-sm text-[var(--muted)]">
-            Set up your Manual Input baseline first before logging daily contacts.
-          </p>
-          <Link
-            href="/setup"
-            className="mt-6 inline-block rounded-lg bg-[var(--brand)] px-6 py-2.5 text-sm font-medium text-white hover:bg-[var(--brand-dark)]"
-          >
-            Go to Manual Input
-          </Link>
-        </div>
-      </>
+      <AppPage title="Daily Contacts" description="Log daily contact entries from this page.">
+        <AppEmptyState
+          title="Manual Input required"
+          message="Set up your Manual Input baseline first before logging daily contacts."
+          actionHref={APP_ROUTES.manualInput}
+          actionLabel="Go to Manual Input"
+        />
+      </AppPage>
     );
   }
 
@@ -90,19 +81,16 @@ export default async function DailyContactsPage() {
   });
 
   return (
-    <>
-      <div className="mb-8">
-        <h2 className="text-3xl font-semibold text-[var(--foreground)]">Daily Contacts</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Add daily entries. Dashboard metrics update from backend calculations only.
-        </p>
-      </div>
+    <AppPage
+      title="Daily Contacts"
+      description="Add daily entries. Dashboard metrics update from backend calculations only."
+    >
       <DailyContactsManager
         consultantMonthId={consultantMonth.id}
         entries={entries}
         contactTypes={contactTypes}
         dispositions={dispositions}
       />
-    </>
+    </AppPage>
   );
 }

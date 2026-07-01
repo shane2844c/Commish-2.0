@@ -4,42 +4,22 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-
-type NavItemKey =
-  | "dashboard"
-  | "leaderboard"
-  | "daily-contacts"
-  | "manual-input"
-  | "compliance"
-  | "settings";
+import { APP_NAV_ITEMS, getActiveNavKey } from "@/lib/app/routes";
 
 type AppShellProps = {
   children: React.ReactNode;
   userName?: string | null;
 };
 
-const navItems: { key: NavItemKey; label: string; href: string }[] = [
-  { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-  { key: "daily-contacts", label: "Daily Contacts", href: "/daily-contacts" },
-  { key: "manual-input", label: "Manual Input", href: "/setup" },
-  { key: "leaderboard", label: "Leaderboard", href: "/leaderboard" },
-  { key: "compliance", label: "Compliance", href: "/compliance" },
-  { key: "settings", label: "Settings", href: "/settings" },
-];
-
-function getActiveItem(pathname: string): NavItemKey {
-  if (pathname.startsWith("/daily-contacts")) return "daily-contacts";
-  if (pathname.startsWith("/setup")) return "manual-input";
-  if (pathname.startsWith("/leaderboard")) return "leaderboard";
-  if (pathname.startsWith("/compliance")) return "compliance";
-  if (pathname.startsWith("/settings")) return "settings";
-  return "dashboard";
-}
-
+/**
+ * Single application shell for all authenticated routes under app/(app)/.
+ * Do not duplicate header, sidebar, or nav in page components.
+ * app/(app)/layout.tsx is the only place that should render this component.
+ */
 export default function AppShell({ children, userName }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const activeItem = getActiveItem(pathname);
+  const activeItem = getActiveNavKey(pathname);
   const [menuOpen, setMenuOpen] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -102,7 +82,7 @@ export default function AppShell({ children, userName }: AppShellProps) {
           }`}
         >
           <nav className="space-y-1">
-            {navItems.map((item) => {
+            {APP_NAV_ITEMS.map((item) => {
               const isActive = item.key === activeItem;
               return (
                 <Link
@@ -136,11 +116,7 @@ export default function AppShell({ children, userName }: AppShellProps) {
           </button>
         </aside>
 
-        <main className="flex-1 px-4 py-8 sm:px-8">
-          <div className="rounded-2xl border border-[var(--border)] bg-white p-6 shadow-[0_10px_25px_rgba(0,74,147,0.06)] sm:p-8">
-            {children}
-          </div>
-        </main>
+        <main className="flex-1 bg-[var(--background)] px-4 py-8 sm:px-8">{children}</main>
       </div>
     </div>
   );

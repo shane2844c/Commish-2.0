@@ -1,6 +1,7 @@
 @import "tailwindcss";
+@config "../tailwind.config.mjs";
 
-@source "../app/**/*.{js,ts,jsx,tsx,mdx}";
+@source "./**/*.{js,ts,jsx,tsx,mdx}";
 @source "../components/**/*.{js,ts,jsx,tsx,mdx}";
 @source "../pages/**/*.{js,ts,jsx,tsx,mdx}";
 @source "../src/**/*.{js,ts,jsx,tsx,mdx}";
@@ -14,16 +15,66 @@
   --brand: #004a93;
   --brand-dark: #003b79;
   --brand-soft: #e8f0fb;
+  --accent: #004a93;
+  --accent-hover: #003b79;
   --success-soft: #e9f8ef;
   --error-soft: #fcebec;
+  --sidebar-bg: #ffffff;
+  --sidebar-active: #e8f0fa;
+  --sidebar-hover: #f0f4f8;
+  --gold: #ffd700;
+  --silver: #c0c0c0;
+  --bronze: #cd7f32;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
+
+  img {
+    display: block;
+    max-width: 100%;
+  }
 }
 
-* {
-  border-color: var(--border);
+@keyframes gold-sparkle {
+  0%,
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.85;
+    filter: brightness(1.15);
+  }
+}
+
+.gold-sparkle {
+  animation: gold-sparkle 2s ease-in-out infinite;
 }

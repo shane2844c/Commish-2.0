@@ -1,8 +1,8 @@
+import { AppPage } from "@/components/app";
 import ComplianceManager from "@/components/ComplianceManager";
 import { fetchComplianceCallScores, fetchComplianceMetricsForMonth } from "@/lib/compliance/queries";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMonthYear } from "@/lib/types";
-import { redirect } from "next/navigation";
 
 type CompliancePageProps = {
   searchParams: Promise<{ month?: string; year?: string }>;
@@ -15,7 +15,7 @@ export default async function CompliancePage({ searchParams }: CompliancePagePro
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    throw new Error("Unauthenticated");
   }
 
   const params = await searchParams;
@@ -51,13 +51,10 @@ export default async function CompliancePage({ searchParams }: CompliancePagePro
   );
 
   return (
-    <>
-      <div className="mb-8">
-        <h2 className="text-3xl font-semibold text-[var(--foreground)]">Compliance</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Record QA call scores and track commission payable rates after compliance review.
-        </p>
-      </div>
+    <AppPage
+      title="Compliance"
+      description="Record QA call scores and track commission payable rates after compliance review."
+    >
       <ComplianceManager
         month={month}
         year={year}
@@ -65,6 +62,6 @@ export default async function CompliancePage({ searchParams }: CompliancePagePro
         initialCalls={initialCalls}
         summary={summary}
       />
-    </>
+    </AppPage>
   );
 }
