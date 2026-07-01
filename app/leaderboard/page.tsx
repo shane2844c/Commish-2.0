@@ -1,13 +1,9 @@
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import LeaderboardTable from "@/components/LeaderboardTable";
+import { fetchLeaderboardPerformance } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
-import {
-  getCurrentMonthYear,
-  toMonthStart,
-  type LeaderboardRow,
-  type Profile,
-} from "@/lib/types";
+import { getCurrentMonthYear, type LeaderboardRow, type Profile } from "@/lib/types";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
@@ -26,15 +22,8 @@ export default async function LeaderboardPage() {
     .single();
 
   const { month, year } = getCurrentMonthYear();
-  const monthStart = toMonthStart(month, year);
-
-  const { data: performances } = await supabase
-    .from("v_consultant_performance")
-    .select("*")
-    .eq("month_start", monthStart);
-
-  const performanceRows = performances ?? [];
-  const userIds = performanceRows.map((row) => row.user_id);
+  const performanceRows = await fetchLeaderboardPerformance(supabase, month, year);
+  const userIds = performanceRows.map((row) => row.userId);
 
   let profiles: Profile[] = [];
 
@@ -51,17 +40,16 @@ export default async function LeaderboardPage() {
 
   const leaderboardRows: LeaderboardRow[] = performanceRows
     .map((row) => {
-      const userProfile = profileMap.get(row.user_id);
-
+      const userProfile = profileMap.get(row.userId);
       return {
-        userId: row.user_id,
+        userId: row.userId,
         name: userProfile?.full_name || userProfile?.email || "Unknown",
-        mtdCommission: Number(row.mtd_commission ?? 0),
-        projectedCommission: Number(row.projected_commission ?? 0),
-        mtdTotalSalesPoints: Number(row.mtd_total_sales_points ?? 0),
-        mtdDpp: Number(row.mtd_dpp ?? 0),
-        averageGwp: Number(row.average_gwp ?? 0),
-        percentToTargetConversion: Number(row.percent_to_target_conversion ?? 0),
+        mtdCommission: row.mtdCommission,
+        projectedCommission: row.projectedCommission,
+        mtdTotalSalesPoints: row.mtdTotalSalesPoints,
+        mtdDpp: row.mtdDpp,
+        averageGwp: row.averageGwp,
+        percentToTargetConversion: row.percentToTargetConversion,
         rank: 0,
       };
     })

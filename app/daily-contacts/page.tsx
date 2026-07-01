@@ -2,24 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import DailyContactsManager from "@/components/DailyContactsManager";
+import {
+  contactTypeDisplayName,
+  contactTypePointsPerSale,
+  mapContactTypeRows,
+} from "@/lib/contactTypes/helpers";
+import { fetchContactTypes } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentMonthYear, toMonthStart, type ContactOutcomeRow, type ContactTypeRow } from "@/lib/types";
-
-type DailyContactJoinedRow = {
-  id: string;
-  entry_date: string;
-  created_at: string;
-  sales_points: number;
-  hidden_total_gwp: number;
-  contact_type:
-    | Pick<ContactTypeRow, "slug" | "name" | "points">
-    | Array<Pick<ContactTypeRow, "slug" | "name" | "points">>
-    | null;
-  outcome:
-    | Pick<ContactOutcomeRow, "slug" | "name">
-    | Array<Pick<ContactOutcomeRow, "slug" | "name">>
-    | null;
-};
+import { getCurrentMonthYear, type DailyContactEntryRow } from "@/lib/types";
 
 export default async function DailyContactsPage() {
   const supabase = await createClient();
@@ -37,13 +27,14 @@ export default async function DailyContactsPage() {
     .eq("id", user.id)
     .single();
 
+  const contactTypes = mapContactTypeRows(await fetchContactTypes(supabase));
   const { month, year } = getCurrentMonthYear();
-  const monthStart = toMonthStart(month, year);
   const { data: consultantMonth } = await supabase
     .from("consultant_months")
     .select("id")
     .eq("user_id", user.id)
-    .eq("month_start", monthStart)
+    .eq("month", month)
+    .eq("year", year)
     .maybeSingle();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -53,9 +44,7 @@ export default async function DailyContactsPage() {
       <DashboardShell userName={profile?.full_name} activeItem="daily-contacts">
         <div className="mb-8">
           <h2 className="text-3xl font-semibold text-[var(--foreground)]">Daily Contacts</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Log each contact and outcome from this page.
-          </p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Log daily contact entries from this page.</p>
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-white p-8 text-center shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
           <p className="text-sm text-[var(--muted)]">
@@ -73,37 +62,35 @@ export default async function DailyContactsPage() {
   }
 
   const { data: entryRows } = await supabase
-    .from("performance_entries")
-    .select(
-      "id,entry_date,created_at,sales_points,hidden_total_gwp,contact_type:contact_types(slug,name,points),outcome:contact_outcomes(slug,name)"
-    )
+    .from("daily_contact_entries")
+    .select("*")
     .eq("consultant_month_id", consultantMonth.id)
-    .eq("source", "daily")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
-  const entries =
-    ((entryRows ?? []) as unknown as DailyContactJoinedRow[]).map((row) => {
-      const type = Array.isArray(row.contact_type) ? row.contact_type[0] : row.contact_type;
-      const outcome = Array.isArray(row.outcome) ? row.outcome[0] : row.outcome;
-      return {
+  const entries = ((entryRows ?? []) as DailyContactEntryRow[]).map((row) => {
+    const convertedSalesCount = Number(row.converted_sales_count);
+    const pointsPerSale = contactTypePointsPerSale(contactTypes, row.contact_type_key);
+    return {
       id: row.id,
       entryDate: row.entry_date,
       createdAt: row.created_at,
-      contactTypeSlug: type?.slug ?? "",
-      contactTypeName: type?.name ?? "Unknown",
-      contactTypePoints: Number(type?.points ?? 0),
-      outcomeSlug: outcome?.slug ?? "",
-      outcomeName: outcome?.name ?? "Unknown",
-      salesPoints: Number(row.sales_points ?? 0),
-      saleGwp: Number(row.hidden_total_gwp ?? 0),
-      };
-    }) ?? [];
+      contactTypeKey: row.contact_type_key,
+      contactTypeName: contactTypeDisplayName(contactTypes, row.contact_type_key),
+      pointsPerSale,
+      contactsCount: Number(row.contacts_count),
+      convertedSalesCount,
+      totalGwp: Number(row.total_gwp),
+      notes: row.notes,
+      salesPoints: convertedSalesCount * pointsPerSale,
+    };
+  });
 
   const todaysEntries = entries.filter((entry) => entry.entryDate === today);
-  const contactsLoggedToday = todaysEntries.length;
-  const convertedSalesToday = todaysEntries.filter((entry) => entry.salesPoints > 0).length;
+  const contactsLoggedToday = todaysEntries.reduce((sum, entry) => sum + entry.contactsCount, 0);
+  const convertedSalesToday = todaysEntries.reduce((sum, entry) => sum + entry.convertedSalesCount, 0);
   const salesPointsToday = todaysEntries.reduce((sum, entry) => sum + entry.salesPoints, 0);
-  const totalGwpToday = todaysEntries.reduce((sum, entry) => sum + entry.saleGwp, 0);
+  const totalGwpToday = todaysEntries.reduce((sum, entry) => sum + entry.totalGwp, 0);
   const averageGwpToday = convertedSalesToday > 0 ? totalGwpToday / convertedSalesToday : 0;
 
   return (
@@ -111,12 +98,13 @@ export default async function DailyContactsPage() {
       <div className="mb-8">
         <h2 className="text-3xl font-semibold text-[var(--foreground)]">Daily Contacts</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Add one contact at a time. Dashboard metrics update from backend calculations only.
+          Add daily entries. Dashboard metrics update from backend calculations only.
         </p>
       </div>
       <DailyContactsManager
         consultantMonthId={consultantMonth.id}
         entries={entries}
+        contactTypes={contactTypes}
         todaySummary={{
           contactsLoggedToday,
           convertedSalesToday,

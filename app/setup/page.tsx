@@ -1,15 +1,21 @@
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import ManualInputClient from "@/components/ManualInputClient";
+import {
+  contactTypeDisplayName,
+  contactTypePointsPerSale,
+  mapContactTypeRows,
+} from "@/lib/contactTypes/helpers";
+import { fetchContactTypes } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
 import {
   getCurrentMonthYear,
   rowToManualInputDefaults,
-  toMonthStart,
+  type AdjustmentHistoryRow,
   type ConsultantMonthRow,
-  type ContactTypeRow,
+  type ManualContactAdjustmentRow,
   type ManualInputDefaultValues,
-  type PerformanceEntryRow,
+  type MonthlyContactBaselineRow,
 } from "@/lib/types";
 
 export default async function SetupPage() {
@@ -28,78 +34,62 @@ export default async function SetupPage() {
     .eq("id", user.id)
     .single();
 
+  const contactTypes = mapContactTypeRows(await fetchContactTypes(supabase));
   const { month, year } = getCurrentMonthYear();
-  const monthStart = toMonthStart(month, year);
 
   const { data: existingSetup } = await supabase
     .from("consultant_months")
     .select("*")
     .eq("user_id", user.id)
-    .eq("month_start", monthStart)
+    .eq("month", month)
+    .eq("year", year)
     .maybeSingle();
 
   const fallbackDefaults: ManualInputDefaultValues = {
     month,
     year,
-    employmentType: "Full-time" as const,
+    employmentType: "Full-time",
     fullTimePointsTarget: 0,
     fullTimeRosteredDays: 0,
-    totalRosteredDays: 0,
-    completedRosteredDays: 0,
+    totalRosteredDaysThisMonth: 0,
+    completedRosteredDaysSoFar: 0,
     baselineByContactType: {},
   };
 
   let manualDefaults = fallbackDefaults;
-  let adjustmentHistory: Array<{
-    id: string;
-    entryDate: string | null;
-    reason: string | null;
-    contactTypeName: string;
-    contactCount: number;
-    convertedSalesCount: number;
-    salesPoints: number;
-  }> = [];
+  let adjustmentHistory: AdjustmentHistoryRow[] = [];
 
   if (existingSetup) {
     const [{ data: baselineRows }, { data: adjustmentRows }] = await Promise.all([
       supabase
-        .from("performance_entries")
-        .select("*, contact_type:contact_types(slug,points)")
+        .from("monthly_contact_baselines")
+        .select("*")
         .eq("consultant_month_id", existingSetup.id)
-        .eq("source", "baseline")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: true }),
       supabase
-        .from("performance_entries")
-        .select("id,entry_date,reason,contact_count,converted_sales_count,sales_points,contact_type:contact_types(name)")
+        .from("manual_contact_adjustments")
+        .select("*")
         .eq("consultant_month_id", existingSetup.id)
-        .eq("source", "manual_adjustment")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false }),
     ]);
 
-    const typedSetup = existingSetup as ConsultantMonthRow;
-    const typedBaselineRows =
-      ((baselineRows ?? []) as Array<
-        PerformanceEntryRow & { contact_type: Pick<ContactTypeRow, "slug" | "points"> | null }
-      >) ?? [];
-    manualDefaults = rowToManualInputDefaults(typedSetup, typedBaselineRows);
-    adjustmentHistory =
-      ((adjustmentRows ?? []) as unknown as Array<
-        Pick<
-          PerformanceEntryRow,
-          "id" | "entry_date" | "reason" | "contact_count" | "converted_sales_count" | "sales_points"
-        > & { contact_type: Pick<ContactTypeRow, "name"> | Array<Pick<ContactTypeRow, "name">> | null }
-      >).map((row) => {
-        const contactType = Array.isArray(row.contact_type) ? row.contact_type[0] : row.contact_type;
-        return {
-        id: row.id,
-        entryDate: row.entry_date,
-        reason: row.reason,
-        contactTypeName: contactType?.name ?? "Unknown",
-        contactCount: Number(row.contact_count ?? 0),
-        convertedSalesCount: Number(row.converted_sales_count ?? 0),
-        salesPoints: Number(row.sales_points ?? 0),
-      };
-      }) ?? [];
+    manualDefaults = rowToManualInputDefaults(
+      existingSetup as ConsultantMonthRow,
+      (baselineRows ?? []) as MonthlyContactBaselineRow[]
+    );
+
+    adjustmentHistory = ((adjustmentRows ?? []) as ManualContactAdjustmentRow[]).map((row) => ({
+      id: row.id,
+      adjustmentDate: row.adjustment_date,
+      reason: row.reason,
+      contactTypeName: contactTypeDisplayName(contactTypes, row.contact_type_key),
+      contactsDelta: Number(row.contacts_delta),
+      convertedSalesDelta: Number(row.converted_sales_delta),
+      salesPointsDelta:
+        Number(row.converted_sales_delta) * contactTypePointsPerSale(contactTypes, row.contact_type_key),
+    }));
   }
 
   return (
@@ -114,6 +104,7 @@ export default async function SetupPage() {
         consultantMonthId={existingSetup?.id}
         defaultValues={manualDefaults}
         adjustmentHistory={adjustmentHistory}
+        contactTypes={contactTypes}
       />
     </DashboardShell>
   );

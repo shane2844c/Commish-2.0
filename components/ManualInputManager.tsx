@@ -2,51 +2,53 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { CONTACT_TYPES } from "@/lib/config/performance";
+import type { ContactTypeOption } from "@/lib/contactTypes/helpers";
 import { formatCurrency, formatPercent } from "@/lib/calculations";
-import type { EmploymentTypeUi, ManualInputDefaultValues, PerformanceActionState } from "@/lib/types";
-
-type AdjustmentHistoryRow = {
-  id: string;
-  entryDate: string | null;
-  reason: string | null;
-  contactTypeName: string;
-  contactCount: number;
-  convertedSalesCount: number;
-  salesPoints: number;
-};
+import { averageGwpFromTotals } from "@/lib/types";
+import type { AdjustmentHistoryRow, EmploymentTypeUi, ManualInputDefaultValues, PerformanceActionState } from "@/lib/types";
 
 type ManualInputManagerProps = {
   consultantMonthId?: string;
   defaultValues: ManualInputDefaultValues;
   adjustmentHistory: AdjustmentHistoryRow[];
+  contactTypes: ContactTypeOption[];
 };
 
 type Mode = "baseline" | "manual-adjustment";
-type TypeRowInput = {
-  contacts: number;
-  convertedSales: number;
+
+type BaselineRowInput = {
+  totalContactsSoFar: number;
+  convertedSalesSoFar: number;
   averageGwp: number;
 };
 
-type TypeRowsState = Record<string, TypeRowInput>;
+type AdjustmentRowInput = {
+  contactsDelta: number;
+  convertedSalesDelta: number;
+  averageGwp: number;
+};
 
-function buildRowsFromBaseline(defaultValues: ManualInputDefaultValues): TypeRowsState {
-  const rows: TypeRowsState = {};
-  CONTACT_TYPES.forEach((type) => {
-    rows[type.slug] = {
-      contacts: defaultValues.baselineByContactType[type.slug]?.contacts ?? 0,
-      convertedSales: defaultValues.baselineByContactType[type.slug]?.convertedSales ?? 0,
-      averageGwp: defaultValues.baselineByContactType[type.slug]?.averageGwp ?? 0,
+function buildBaselineRows(
+  defaultValues: ManualInputDefaultValues,
+  contactTypes: ContactTypeOption[]
+): Record<string, BaselineRowInput> {
+  const rows: Record<string, BaselineRowInput> = {};
+  contactTypes.forEach((type) => {
+    const saved = defaultValues.baselineByContactType[type.type_key];
+    const convertedSalesSoFar = saved?.convertedSalesSoFar ?? 0;
+    rows[type.type_key] = {
+      totalContactsSoFar: saved?.totalContactsSoFar ?? 0,
+      convertedSalesSoFar,
+      averageGwp: averageGwpFromTotals(convertedSalesSoFar, saved?.totalGwpSoFar ?? 0),
     };
   });
   return rows;
 }
 
-function buildEmptyRows(): TypeRowsState {
-  const rows: TypeRowsState = {};
-  CONTACT_TYPES.forEach((type) => {
-    rows[type.slug] = { contacts: 0, convertedSales: 0, averageGwp: 0 };
+function buildEmptyAdjustmentRows(contactTypes: ContactTypeOption[]): Record<string, AdjustmentRowInput> {
+  const rows: Record<string, AdjustmentRowInput> = {};
+  contactTypes.forEach((type) => {
+    rows[type.type_key] = { contactsDelta: 0, convertedSalesDelta: 0, averageGwp: 0 };
   });
   return rows;
 }
@@ -55,6 +57,7 @@ export default function ManualInputManager({
   consultantMonthId,
   defaultValues,
   adjustmentHistory,
+  contactTypes,
 }: ManualInputManagerProps) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("baseline");
@@ -67,15 +70,11 @@ export default function ManualInputManager({
     employmentType: defaultValues.employmentType,
     fullTimePointsTarget: defaultValues.fullTimePointsTarget,
     fullTimeRosteredDays: defaultValues.fullTimeRosteredDays,
-    totalRosteredDays: defaultValues.totalRosteredDays,
-    completedRosteredDays: defaultValues.completedRosteredDays,
+    totalRosteredDaysThisMonth: defaultValues.totalRosteredDaysThisMonth,
+    completedRosteredDaysSoFar: defaultValues.completedRosteredDaysSoFar,
   });
-  const [baselineRows, setBaselineRows] = useState<TypeRowsState>(() =>
-    buildRowsFromBaseline(defaultValues)
-  );
-  const [adjustmentRows, setAdjustmentRows] = useState<TypeRowsState>(() => buildEmptyRows());
-
-  const currentRows = mode === "baseline" ? baselineRows : adjustmentRows;
+  const [baselineRows, setBaselineRows] = useState(() => buildBaselineRows(defaultValues, contactTypes));
+  const [adjustmentRows, setAdjustmentRows] = useState(() => buildEmptyAdjustmentRows(contactTypes));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,16 +88,43 @@ export default function ManualInputManager({
       const response = await fetch(endpoint, {
         method: "POST",
         body: new FormData(event.currentTarget),
+        headers: { Accept: "application/json" },
       });
-      const result = (await response.json()) as PerformanceActionState;
+
+      if (response.status === 401) {
+        router.push("/login");
+        return;
+      }
+
+      let result: PerformanceActionState;
+      try {
+        result = (await response.json()) as PerformanceActionState;
+      } catch {
+        setFormState({ error: "Invalid server response. Please try again." });
+        return;
+      }
+
+      if (!response.ok || result.error) {
+        setFormState({ error: result.error ?? "Failed to save. Please try again." });
+        return;
+      }
+
+      if (!result.success) {
+        setFormState({ error: "Save did not complete. Please try again." });
+        return;
+      }
+
       setFormState(result);
 
-      if (response.ok && result.success) {
-        if (mode === "manual-adjustment") {
-          setAdjustmentRows(buildEmptyRows());
-        }
+      if (mode === "manual-adjustment") {
+        setAdjustmentRows(buildEmptyAdjustmentRows(contactTypes));
         router.refresh();
+        return;
       }
+
+      console.log("Baseline saved successfully");
+      console.log("Navigating to dashboard without hard reload");
+      router.push("/dashboard");
     } catch {
       setFormState({ error: "Failed to save. Please try again." });
     } finally {
@@ -107,22 +133,40 @@ export default function ManualInputManager({
   }
 
   const preview = useMemo(() => {
-    const totals = CONTACT_TYPES.reduce(
+    const totals = contactTypes.reduce(
       (acc, type) => {
-        const row = currentRows[type.slug] ?? { contacts: 0, convertedSales: 0, averageGwp: 0 };
-        const contacts = Number(row.contacts || 0);
-        const converted = Number(row.convertedSales || 0);
-        const averageGwp = Number(row.averageGwp || 0);
-        const points = converted * type.points;
-        const hiddenGwp = converted * averageGwp;
-        acc.contacts += contacts;
-        acc.converted += converted;
-        acc.salesPoints += points;
-        acc.hiddenGwp += hiddenGwp;
-        acc.blendedNumerator += contacts * type.expectedConversionRate;
+        if (mode === "baseline") {
+          const row = baselineRows[type.type_key] ?? {
+            totalContactsSoFar: 0,
+            convertedSalesSoFar: 0,
+            averageGwp: 0,
+          };
+          const contacts = Number(row.totalContactsSoFar || 0);
+          const converted = Number(row.convertedSalesSoFar || 0);
+          const totalGwp = converted * Number(row.averageGwp || 0);
+          acc.contacts += contacts;
+          acc.converted += converted;
+          acc.salesPoints += converted * type.points_per_sale;
+          acc.totalGwp += totalGwp;
+          acc.blendedNumerator += contacts * type.expected_conversion_rate;
+        } else {
+          const row = adjustmentRows[type.type_key] ?? {
+            contactsDelta: 0,
+            convertedSalesDelta: 0,
+            averageGwp: 0,
+          };
+          const contacts = Number(row.contactsDelta || 0);
+          const converted = Number(row.convertedSalesDelta || 0);
+          const totalGwp = converted * Number(row.averageGwp || 0);
+          acc.contacts += contacts;
+          acc.converted += converted;
+          acc.salesPoints += converted * type.points_per_sale;
+          acc.totalGwp += totalGwp;
+          acc.blendedNumerator += contacts * type.expected_conversion_rate;
+        }
         return acc;
       },
-      { contacts: 0, converted: 0, salesPoints: 0, hiddenGwp: 0, blendedNumerator: 0 }
+      { contacts: 0, converted: 0, salesPoints: 0, totalGwp: 0, blendedNumerator: 0 }
     );
 
     const blendedTargetConversion =
@@ -130,31 +174,7 @@ export default function ManualInputManager({
     const actualConversion = totals.contacts > 0 ? totals.converted / totals.contacts : 0;
     const percentToTargetConversion =
       blendedTargetConversion > 0 ? actualConversion / blendedTargetConversion : 0;
-    const averageGwp = totals.converted > 0 ? totals.hiddenGwp / totals.converted : 0;
-
-    const conversionMultiplier =
-      percentToTargetConversion >= 1.2
-        ? 1.2
-        : percentToTargetConversion >= 1.1
-          ? 1.1
-          : percentToTargetConversion >= 1
-            ? 1
-            : percentToTargetConversion >= 0.9
-              ? 0.9
-              : 0.8;
-    const dpp =
-      totals.salesPoints >= 250
-        ? 16
-        : totals.salesPoints >= 200
-          ? 14
-          : totals.salesPoints >= 150
-            ? 12
-            : totals.salesPoints >= 100
-              ? 10
-              : 8;
-    const gwpBonus =
-      averageGwp >= 160 ? 2.5 : averageGwp >= 140 ? 2 : averageGwp >= 120 ? 1.5 : averageGwp >= 100 ? 1 : 0;
-    const estimatedCommissionImpact = totals.salesPoints * (dpp + gwpBonus) * conversionMultiplier;
+    const averageGwp = totals.converted > 0 ? totals.totalGwp / totals.converted : 0;
 
     return {
       contacts: totals.contacts,
@@ -164,51 +184,18 @@ export default function ManualInputManager({
       actualConversion,
       percentToTargetConversion,
       averageGwp,
-      estimatedCommissionImpact,
     };
-  }, [currentRows]);
-
-  const updateRows = (setter: React.Dispatch<React.SetStateAction<TypeRowsState>>) => {
-    return (slug: string, key: keyof TypeRowInput, value: string) => {
-      setter((current) => ({
-        ...current,
-        [slug]: {
-          ...current[slug],
-          [key]: Number(value || 0),
-        },
-      }));
-    };
-  };
-
-  const updateBaselineRow = updateRows(setBaselineRows);
-  const updateAdjustmentRow = updateRows(setAdjustmentRows);
-  const updateCurrentRow = mode === "baseline" ? updateBaselineRow : updateAdjustmentRow;
+  }, [mode, baselineRows, adjustmentRows, contactTypes]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setMode("baseline")}
-          className={`rounded-lg px-4 py-2 text-sm font-medium ${
-            mode === "baseline"
-              ? "bg-[var(--brand)] text-white"
-              : "border border-[var(--border)] text-[var(--brand)] hover:bg-[var(--brand-soft)]"
-          }`}
-        >
+        <ModeButton active={mode === "baseline"} onClick={() => setMode("baseline")}>
           Starting Baseline
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("manual-adjustment")}
-          className={`rounded-lg px-4 py-2 text-sm font-medium ${
-            mode === "manual-adjustment"
-              ? "bg-[var(--brand)] text-white"
-              : "border border-[var(--border)] text-[var(--brand)] hover:bg-[var(--brand-soft)]"
-          }`}
-        >
+        </ModeButton>
+        <ModeButton active={mode === "manual-adjustment"} onClick={() => setMode("manual-adjustment")}>
           Manual Adjustment
-        </button>
+        </ModeButton>
       </div>
 
       {(formState.error || formState.success) && (
@@ -230,11 +217,6 @@ export default function ManualInputManager({
           <h3 className="text-lg font-semibold text-[var(--foreground)]">
             {mode === "baseline" ? "Manual Input" : "Manual Adjustment"}
           </h3>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            {mode === "baseline"
-              ? "Baseline replaces existing baseline rows for this month."
-              : "Manual adjustments are additive and auditable."}
-          </p>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <InputField label="Month" name="month" value={monthConfig.month} onChange={(value) => setMonthConfig((c) => ({ ...c, month: Number(value || 0) }))} />
@@ -243,9 +225,7 @@ export default function ManualInputManager({
               label="Employment Type"
               name="employmentType"
               value={monthConfig.employmentType}
-              onChange={(value) =>
-                setMonthConfig((c) => ({ ...c, employmentType: value as EmploymentTypeUi }))
-              }
+              onChange={(value) => setMonthConfig((c) => ({ ...c, employmentType: value as EmploymentTypeUi }))}
               options={[
                 { value: "Full-time", label: "Full-time" },
                 { value: "Part-time", label: "Part-time" },
@@ -265,17 +245,15 @@ export default function ManualInputManager({
             />
             <InputField
               label="Total rostered days this month"
-              name="totalRosteredDays"
-              value={monthConfig.totalRosteredDays}
-              onChange={(value) => setMonthConfig((c) => ({ ...c, totalRosteredDays: Number(value || 0) }))}
+              name="totalRosteredDaysThisMonth"
+              value={monthConfig.totalRosteredDaysThisMonth}
+              onChange={(value) => setMonthConfig((c) => ({ ...c, totalRosteredDaysThisMonth: Number(value || 0) }))}
             />
             <InputField
               label="Completed rostered days so far"
-              name="completedRosteredDays"
-              value={monthConfig.completedRosteredDays}
-              onChange={(value) =>
-                setMonthConfig((c) => ({ ...c, completedRosteredDays: Number(value || 0) }))
-              }
+              name="completedRosteredDaysSoFar"
+              value={monthConfig.completedRosteredDaysSoFar}
+              onChange={(value) => setMonthConfig((c) => ({ ...c, completedRosteredDaysSoFar: Number(value || 0) }))}
             />
 
             {mode === "manual-adjustment" && (
@@ -303,50 +281,131 @@ export default function ManualInputManager({
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Contact type</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Points per sale</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Expected conversion</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Total contacts so far</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Converted sales so far</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">
+                  {mode === "baseline" ? "Total contacts so far" : "Contacts delta"}
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">
+                  {mode === "baseline" ? "Converted sales so far" : "Converted sales delta"}
+                </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Average GWP</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Calculated sales points</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
-              {CONTACT_TYPES.map((type) => {
-                const row = currentRows[type.slug];
-                const salesPoints = Number(row?.convertedSales ?? 0) * type.points;
+              {contactTypes.map((type) => {
+                if (mode === "baseline") {
+                  const row = baselineRows[type.type_key];
+                  const salesPoints = Number(row?.convertedSalesSoFar ?? 0) * type.points_per_sale;
+                  return (
+                    <tr key={type.type_key}>
+                      <td className="px-4 py-3 text-sm text-[var(--foreground)]">{type.display_name}</td>
+                      <td className="px-4 py-3 text-right text-sm">{type.points_per_sale.toFixed(1)}</td>
+                      <td className="px-4 py-3 text-right text-sm">{(type.expected_conversion_rate * 100).toFixed(0)}%</td>
+                      <td className="px-4 py-3">
+                        <input
+                          name={`${type.type_key}__totalContactsSoFar`}
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={row?.totalContactsSoFar ?? 0}
+                          onChange={(e) =>
+                            setBaselineRows((current) => ({
+                              ...current,
+                              [type.type_key]: { ...current[type.type_key], totalContactsSoFar: Number(e.target.value || 0) },
+                            }))
+                          }
+                          className={tableInputClass}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          name={`${type.type_key}__convertedSalesSoFar`}
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={row?.convertedSalesSoFar ?? 0}
+                          onChange={(e) =>
+                            setBaselineRows((current) => ({
+                              ...current,
+                              [type.type_key]: { ...current[type.type_key], convertedSalesSoFar: Number(e.target.value || 0) },
+                            }))
+                          }
+                          className={tableInputClass}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          name={`${type.type_key}__averageGwp`}
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={row?.averageGwp ?? 0}
+                          onChange={(e) =>
+                            setBaselineRows((current) => ({
+                              ...current,
+                              [type.type_key]: { ...current[type.type_key], averageGwp: Number(e.target.value || 0) },
+                            }))
+                          }
+                          className={tableInputClass}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold text-[var(--brand)]">
+                        {formatCurrency(salesPoints)}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                const row = adjustmentRows[type.type_key];
+                const salesPoints = Number(row?.convertedSalesDelta ?? 0) * type.points_per_sale;
                 return (
-                  <tr key={type.slug}>
-                    <td className="px-4 py-3 text-sm text-[var(--foreground)]">{type.name}</td>
-                    <td className="px-4 py-3 text-right text-sm text-[var(--foreground)]">{type.points.toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right text-sm text-[var(--foreground)]">{(type.expectedConversionRate * 100).toFixed(0)}%</td>
+                  <tr key={type.type_key}>
+                    <td className="px-4 py-3 text-sm text-[var(--foreground)]">{type.display_name}</td>
+                    <td className="px-4 py-3 text-right text-sm">{type.points_per_sale.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right text-sm">{(type.expected_conversion_rate * 100).toFixed(0)}%</td>
                     <td className="px-4 py-3">
                       <input
-                        name={`${type.slug}__contacts`}
+                        name={`${type.type_key}__contactsDelta`}
                         type="number"
                         step="1"
-                        value={row?.contacts ?? 0}
-                        onChange={(event) => updateCurrentRow(type.slug, "contacts", event.target.value)}
-                        className={tableInputClass}
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <input
-                        name={`${type.slug}__convertedSales`}
-                        type="number"
-                        step="1"
-                        value={row?.convertedSales ?? 0}
-                        onChange={(event) =>
-                          updateCurrentRow(type.slug, "convertedSales", event.target.value)
+                        value={row?.contactsDelta ?? 0}
+                        onChange={(e) =>
+                          setAdjustmentRows((current) => ({
+                            ...current,
+                            [type.type_key]: { ...current[type.type_key], contactsDelta: Number(e.target.value || 0) },
+                          }))
                         }
                         className={tableInputClass}
                       />
                     </td>
                     <td className="px-4 py-3">
                       <input
-                        name={`${type.slug}__averageGwp`}
+                        name={`${type.type_key}__convertedSalesDelta`}
+                        type="number"
+                        step="1"
+                        value={row?.convertedSalesDelta ?? 0}
+                        onChange={(e) =>
+                          setAdjustmentRows((current) => ({
+                            ...current,
+                            [type.type_key]: { ...current[type.type_key], convertedSalesDelta: Number(e.target.value || 0) },
+                          }))
+                        }
+                        className={tableInputClass}
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        name={`${type.type_key}__averageGwp`}
                         type="number"
                         step="0.01"
+                        min="0"
                         value={row?.averageGwp ?? 0}
-                        onChange={(event) => updateCurrentRow(type.slug, "averageGwp", event.target.value)}
+                        onChange={(e) =>
+                          setAdjustmentRows((current) => ({
+                            ...current,
+                            [type.type_key]: { ...current[type.type_key], averageGwp: Number(e.target.value || 0) },
+                          }))
+                        }
                         className={tableInputClass}
                       />
                     </td>
@@ -361,7 +420,7 @@ export default function ManualInputManager({
         </div>
 
         <div className="rounded-xl border border-[var(--border)] bg-white p-5">
-          <h4 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Preview</h4>
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Preview (calculated locally)</h4>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <PreviewItem label="Total contacts" value={formatCurrency(preview.contacts)} />
             <PreviewItem label="Converted sales" value={formatCurrency(preview.converted)} />
@@ -370,7 +429,6 @@ export default function ManualInputManager({
             <PreviewItem label="Actual conversion" value={formatPercent(preview.actualConversion)} />
             <PreviewItem label="% to target conversion" value={formatPercent(preview.percentToTargetConversion)} />
             <PreviewItem label="Average GWP" value={formatCurrency(preview.averageGwp)} />
-            <PreviewItem label="Estimated commission impact" value={formatCurrency(preview.estimatedCommissionImpact)} />
           </div>
         </div>
 
@@ -394,9 +452,9 @@ export default function ManualInputManager({
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Reason</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Contact type</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Contacts</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Converted</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Sales points</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Contacts delta</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Converted delta</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Sales points delta</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
@@ -409,20 +467,12 @@ export default function ManualInputManager({
               ) : (
                 adjustmentHistory.map((row) => (
                   <tr key={row.id}>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-[var(--foreground)]">
-                      {row.entryDate ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-[var(--muted)]">{row.reason ?? "—"}</td>
-                    <td className="px-4 py-3 text-sm text-[var(--foreground)]">{row.contactTypeName}</td>
-                    <td className="px-4 py-3 text-right text-sm text-[var(--foreground)]">
-                      {formatCurrency(row.contactCount)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-[var(--foreground)]">
-                      {formatCurrency(row.convertedSalesCount)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-[var(--foreground)]">
-                      {formatCurrency(row.salesPoints)}
-                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm">{row.adjustmentDate}</td>
+                    <td className="px-4 py-3 text-sm text-[var(--muted)]">{row.reason}</td>
+                    <td className="px-4 py-3 text-sm">{row.contactTypeName}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(row.contactsDelta)}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(row.convertedSalesDelta)}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(row.salesPointsDelta)}</td>
                   </tr>
                 ))
               )}
@@ -431,6 +481,30 @@ export default function ManualInputManager({
         </div>
       </div>
     </div>
+  );
+}
+
+function ModeButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg px-4 py-2 text-sm font-medium ${
+        active
+          ? "bg-[var(--brand)] text-white"
+          : "border border-[var(--border)] text-[var(--brand)] hover:bg-[var(--brand-soft)]"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

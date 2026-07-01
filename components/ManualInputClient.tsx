@@ -1,22 +1,14 @@
 "use client";
 
 import ManualInputManager from "@/components/ManualInputManager";
-import type { ManualInputDefaultValues } from "@/lib/types";
-
-type AdjustmentHistoryRow = {
-  id: string;
-  entryDate: string | null;
-  reason: string | null;
-  contactTypeName: string;
-  contactCount: number;
-  convertedSalesCount: number;
-  salesPoints: number;
-};
+import type { ContactTypeOption } from "@/lib/contactTypes/helpers";
+import type { AdjustmentHistoryRow, ManualInputDefaultValues } from "@/lib/types";
 
 type ManualInputClientProps = {
   consultantMonthId?: string;
   defaultValues: ManualInputDefaultValues;
   adjustmentHistory: AdjustmentHistoryRow[];
+  contactTypes: ContactTypeOption[];
 };
 
 export default function ManualInputClient(props: ManualInputClientProps) {

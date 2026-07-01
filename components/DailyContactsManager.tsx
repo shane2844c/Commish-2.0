@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type FormEvent } from "react";
-import { CONTACT_OUTCOMES, CONTACT_TYPES } from "@/lib/config/performance";
+import { useState, type FormEvent } from "react";
+import type { ContactTypeOption } from "@/lib/contactTypes/helpers";
 import { formatCurrency } from "@/lib/calculations";
 import type { PerformanceActionState } from "@/lib/types";
 
@@ -10,18 +10,20 @@ type DailyContactEntry = {
   id: string;
   entryDate: string;
   createdAt: string;
-  contactTypeSlug: string;
+  contactTypeKey: string;
   contactTypeName: string;
-  contactTypePoints: number;
-  outcomeSlug: string;
-  outcomeName: string;
+  pointsPerSale: number;
+  contactsCount: number;
+  convertedSalesCount: number;
+  totalGwp: number;
+  notes: string | null;
   salesPoints: number;
-  saleGwp: number;
 };
 
 type DailyContactsManagerProps = {
   consultantMonthId: string;
   entries: DailyContactEntry[];
+  contactTypes: ContactTypeOption[];
   todaySummary: {
     contactsLoggedToday: number;
     convertedSalesToday: number;
@@ -33,6 +35,7 @@ type DailyContactsManagerProps = {
 export default function DailyContactsManager({
   consultantMonthId,
   entries,
+  contactTypes,
   todaySummary,
 }: DailyContactsManagerProps) {
   const router = useRouter();
@@ -42,14 +45,6 @@ export default function DailyContactsManager({
   const [savePending, setSavePending] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [editEntry, setEditEntry] = useState<DailyContactEntry | null>(null);
-  const [selectedOutcomeSlug, setSelectedOutcomeSlug] = useState("converted-to-sale");
-
-  const selectedOutcome = useMemo(
-    () => CONTACT_OUTCOMES.find((item) => item.slug === selectedOutcomeSlug),
-    [selectedOutcomeSlug]
-  );
-
-  const showSaleGwp = Boolean(selectedOutcome?.countsAsSale);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,12 +56,17 @@ export default function DailyContactsManager({
         method: "POST",
         body: new FormData(event.currentTarget),
       });
+
+      if (response.status === 401) {
+        router.push("/login");
+        return;
+      }
+
       const result = (await response.json()) as PerformanceActionState;
       setSaveState(result);
 
       if (response.ok && result.success) {
         setEditEntry(null);
-        setSelectedOutcomeSlug("converted-to-sale");
         router.refresh();
       }
     } catch {
@@ -87,6 +87,12 @@ export default function DailyContactsManager({
         method: "POST",
         body: formData,
       });
+
+      if (response.status === 401) {
+        router.push("/login");
+        return;
+      }
+
       const result = (await response.json()) as PerformanceActionState;
       setDeleteState(result);
 
@@ -110,9 +116,9 @@ export default function DailyContactsManager({
       </div>
 
       <div className="rounded-xl border border-[var(--border)] bg-white p-6 shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
-        <h3 className="text-xl font-semibold text-[var(--foreground)]">Add Contact</h3>
+        <h3 className="text-xl font-semibold text-[var(--foreground)]">Add Contact Entry</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Log one contact at a time. Converted contacts create sales points and GWP.
+          Save raw counts and GWP only. Dashboard metrics are calculated after fetch.
         </p>
 
         {(saveState.error || deleteState.error) && (
@@ -144,48 +150,63 @@ export default function DailyContactsManager({
 
             <FormField label="Contact type">
               <select
-                name="contactTypeSlug"
-                defaultValue={editEntry?.contactTypeSlug ?? "outbound"}
+                name="contactTypeKey"
+                defaultValue={editEntry?.contactTypeKey ?? "outbound"}
                 className={inputClass}
                 required
               >
-                {CONTACT_TYPES.map((item) => (
-                  <option key={item.slug} value={item.slug}>
-                    {`${item.name} — ${item.points} pts — ${(item.expectedConversionRate * 100).toFixed(0)}%`}
+                {contactTypes.map((item) => (
+                  <option key={item.type_key} value={item.type_key}>
+                    {`${item.display_name} — ${item.points_per_sale} pts — ${(item.expected_conversion_rate * 100).toFixed(0)}%`}
                   </option>
                 ))}
               </select>
             </FormField>
 
-            <FormField label="Contact outcome">
-              <select
-                name="outcomeSlug"
+            <FormField label="Contacts count">
+              <input
+                name="contactsCount"
+                type="number"
+                step="1"
+                min="0"
+                defaultValue={editEntry?.contactsCount ?? 0}
                 className={inputClass}
-                value={selectedOutcomeSlug}
-                onChange={(event) => setSelectedOutcomeSlug(event.target.value)}
                 required
-              >
-                {CONTACT_OUTCOMES.map((item) => (
-                  <option key={item.slug} value={item.slug}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
+              />
             </FormField>
 
-            {showSaleGwp && (
-              <FormField label="Sale GWP">
-                <input
-                  name="saleGwp"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  defaultValue={editEntry?.saleGwp ?? 0}
-                  className={inputClass}
-                  required
-                />
-              </FormField>
-            )}
+            <FormField label="Converted sales count">
+              <input
+                name="convertedSalesCount"
+                type="number"
+                step="1"
+                min="0"
+                defaultValue={editEntry?.convertedSalesCount ?? 0}
+                className={inputClass}
+                required
+              />
+            </FormField>
+
+            <FormField label="Total GWP">
+              <input
+                name="totalGwp"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={editEntry?.totalGwp ?? 0}
+                className={inputClass}
+                required
+              />
+            </FormField>
+
+            <FormField label="Notes (optional)">
+              <input
+                name="notes"
+                type="text"
+                defaultValue={editEntry?.notes ?? ""}
+                className={inputClass}
+              />
+            </FormField>
           </div>
 
           <div className="flex items-center gap-3">
@@ -194,15 +215,12 @@ export default function DailyContactsManager({
               disabled={savePending}
               className="rounded-lg bg-[var(--brand)] px-6 py-2.5 text-sm font-medium text-white hover:bg-[var(--brand-dark)] disabled:opacity-50"
             >
-              {savePending ? "Saving..." : editEntry ? "Update Contact" : "Add Contact"}
+              {savePending ? "Saving..." : editEntry ? "Update Entry" : "Add Entry"}
             </button>
             {editEntry && (
               <button
                 type="button"
-                onClick={() => {
-                  setEditEntry(null);
-                  setSelectedOutcomeSlug("converted-to-sale");
-                }}
+                onClick={() => setEditEntry(null)}
                 className="rounded-lg border border-[var(--brand)] px-4 py-2 text-sm font-medium text-[var(--brand)] hover:bg-[var(--brand-soft)]"
               >
                 Cancel edit
@@ -214,64 +232,42 @@ export default function DailyContactsManager({
 
       <div className="rounded-xl border border-[var(--border)] bg-white shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
         <div className="border-b border-[var(--border)] px-6 py-4">
-          <h3 className="text-lg font-semibold text-[var(--foreground)]">Today&apos;s Contact Log</h3>
+          <h3 className="text-lg font-semibold text-[var(--foreground)]">Contact Log</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[var(--border)]">
             <thead className="bg-[#f6f9ff]">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">
-                  Time
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">
-                  Contact type
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">
-                  Outcome
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">
-                  Points earned
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">
-                  Sale GWP
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">
-                  Actions
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Date</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Contact type</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Contacts</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Converted</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Points</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Total GWP</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
               {entries.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--muted)]">
+                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--muted)]">
                     No contacts logged yet.
                   </td>
                 </tr>
               ) : (
                 entries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-[#f8fbff]">
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-[var(--foreground)]">
-                      {new Date(entry.createdAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-[var(--foreground)]">{entry.contactTypeName}</td>
-                    <td className="px-4 py-3 text-sm text-[var(--muted)]">{entry.outcomeName}</td>
-                    <td className="px-4 py-3 text-right text-sm text-[var(--foreground)]">
-                      {formatCurrency(entry.salesPoints)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-[var(--foreground)]">
-                      {formatCurrency(entry.saleGwp)}
-                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm">{entry.entryDate}</td>
+                    <td className="px-4 py-3 text-sm">{entry.contactTypeName}</td>
+                    <td className="px-4 py-3 text-right text-sm">{entry.contactsCount}</td>
+                    <td className="px-4 py-3 text-right text-sm">{entry.convertedSalesCount}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(entry.salesPoints)}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(entry.totalGwp)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => {
-                            setEditEntry(entry);
-                            setSelectedOutcomeSlug(entry.outcomeSlug);
-                          }}
+                          onClick={() => setEditEntry(entry)}
                           className="rounded-md border border-[var(--brand)] px-2.5 py-1 text-xs font-medium text-[var(--brand)] hover:bg-[var(--brand-soft)]"
                         >
                           Edit

@@ -1,6 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PerformanceActionState } from "@/lib/types";
-import { employmentTypeToDb, toMonthStart } from "@/lib/types";
+import { assertValidContactTypeKey } from "@/lib/contactTypes/keys";
+import type {
+  ConsultantMonthUpsert,
+  ContactTypeRow,
+  ManualContactAdjustmentInsert,
+  MonthlyContactBaselineUpsert,
+  PerformanceActionState,
+} from "@/lib/types";
+import { employmentTypeToDb, totalGwpFromAverage } from "@/lib/types";
+import { ensureParentUserRows, requireAuthenticatedUser } from "@/lib/supabase/ensureParentUser";
+import { logSupabasePayload, logSupabaseError } from "@/lib/supabase/logPayload";
 
 function parseNumber(value: FormDataEntryValue | null, fallback = 0): number {
   if (value === null || value === "") {
@@ -10,101 +19,159 @@ function parseNumber(value: FormDataEntryValue | null, fallback = 0): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-export async function persistManualBaseline(
+async function fetchContactTypesForSave(supabase: SupabaseClient): Promise<ContactTypeRow[]> {
+  const { data, error } = await supabase
+    .from("contact_types")
+    .select("type_key, display_name, points_per_sale, expected_conversion_rate, sort_order, created_at")
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    logSupabaseError("contact_types", error);
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as ContactTypeRow[];
+}
+
+async function upsertConsultantMonth(
   supabase: SupabaseClient,
   userId: string,
   formData: FormData
-): Promise<PerformanceActionState> {
+): Promise<{ monthRow: { id: string } | null; error?: string }> {
   const month = parseNumber(formData.get("month"));
   const year = parseNumber(formData.get("year"));
   const employmentTypeForDb = employmentTypeToDb(String(formData.get("employmentType") ?? "Full-time"));
   const fullTimePointsTarget = parseNumber(formData.get("fullTimePointsTarget"));
   const fullTimeRosteredDays = parseNumber(formData.get("fullTimeRosteredDays"));
-  const totalRosteredDays = parseNumber(formData.get("totalRosteredDays"));
-  const completedRosteredDays = parseNumber(formData.get("completedRosteredDays"));
+  const totalRosteredDaysThisMonth = parseNumber(formData.get("totalRosteredDaysThisMonth"));
+  const completedRosteredDaysSoFar = parseNumber(formData.get("completedRosteredDaysSoFar"));
 
-  if (!month || !year || !fullTimePointsTarget || !fullTimeRosteredDays || !totalRosteredDays) {
-    return { error: "Month setup fields are required." };
+  if (
+    !month ||
+    !year ||
+    !fullTimePointsTarget ||
+    !fullTimeRosteredDays ||
+    !totalRosteredDaysThisMonth
+  ) {
+    return { monthRow: null, error: "Month setup fields are required." };
   }
 
-  const monthStart = toMonthStart(month, year);
+  const consultantMonthPayload: ConsultantMonthUpsert = {
+    user_id: userId,
+    month,
+    year,
+    employment_type: employmentTypeForDb,
+    full_time_points_target: fullTimePointsTarget,
+    full_time_rostered_days: fullTimeRosteredDays,
+    total_rostered_days_this_month: totalRosteredDaysThisMonth,
+    completed_rostered_days_so_far: completedRosteredDaysSoFar,
+  };
 
-  const { data: existingMonth } = await supabase
-    .from("consultant_months")
-    .select("id, join_date")
-    .eq("user_id", userId)
-    .eq("month_start", monthStart)
-    .maybeSingle();
+  logSupabasePayload("consultant_months", consultantMonthPayload);
 
   const { data: monthRow, error: monthError } = await supabase
     .from("consultant_months")
-    .upsert(
-      {
-        user_id: userId,
-        month_start: monthStart,
-        employment_type: employmentTypeForDb,
-        full_time_points_target: fullTimePointsTarget,
-        full_time_rostered_days: fullTimeRosteredDays,
-        user_rostered_days: totalRosteredDays,
-        completed_rostered_days: completedRosteredDays,
-        join_date: existingMonth?.join_date ?? monthStart,
-        baseline_completed_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,month_start" }
-    )
+    .upsert(consultantMonthPayload, { onConflict: "user_id,month,year" })
     .select("id")
     .single();
 
+  if (monthError) {
+    logSupabaseError("consultant_months", monthError);
+    return { monthRow: null, error: monthError.message };
+  }
+
+  console.log("[supabase] consultant_months save success:", monthRow);
+  return { monthRow };
+}
+
+export async function persistManualBaseline(
+  supabase: SupabaseClient,
+  formData: FormData
+): Promise<PerformanceActionState & { status?: number }> {
+  const authResult = await requireAuthenticatedUser(supabase);
+  if (!authResult.ok) {
+    return { error: authResult.error, status: authResult.status };
+  }
+
+  const user = authResult.user;
+  const parentResult = await ensureParentUserRows(supabase, user);
+  if (!parentResult.ok) {
+    return { error: parentResult.error, status: 400 };
+  }
+
+  const { monthRow, error: monthError } = await upsertConsultantMonth(supabase, user.id, formData);
   if (monthError || !monthRow) {
-    return { error: monthError?.message ?? "Failed to save consultant month." };
+    return { error: monthError ?? "Failed to save consultant month.", status: 400 };
   }
 
-  const { data: contactTypes } = await supabase.from("contact_types").select("id,slug,points");
-  if (!contactTypes || contactTypes.length === 0) {
-    return { error: "Contact types are missing. Run updated schema.sql first." };
+  let contactTypes: ContactTypeRow[];
+  try {
+    contactTypes = await fetchContactTypesForSave(supabase);
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Failed to load contact types.",
+      status: 400,
+    };
   }
 
-  const entryDate = monthStart;
+  if (contactTypes.length === 0) {
+    return { error: "No contact types found in database.", status: 400 };
+  }
 
   for (const type of contactTypes) {
-    const contacts = parseNumber(formData.get(`${type.slug}__contacts`));
-    const convertedSales = parseNumber(formData.get(`${type.slug}__convertedSales`));
-    const averageGwp = parseNumber(formData.get(`${type.slug}__averageGwp`));
-    const salesPoints = convertedSales * Number(type.points);
-    const hiddenTotalGwp = convertedSales * averageGwp;
+    const typeKey = type.type_key;
 
-    const { data: existing } = await supabase
-      .from("performance_entries")
-      .select("id")
-      .eq("consultant_month_id", monthRow.id)
-      .eq("source", "baseline")
-      .eq("contact_type_id", type.id)
-      .maybeSingle();
+    try {
+      assertValidContactTypeKey(typeKey);
+    } catch (err) {
+      return {
+        error: err instanceof Error ? err.message : `Invalid contact_type_key: ${typeKey}`,
+        status: 400,
+      };
+    }
 
-    const payload = {
+    const totalContactsSoFar = parseNumber(formData.get(`${typeKey}__totalContactsSoFar`));
+    const convertedSalesSoFar = parseNumber(formData.get(`${typeKey}__convertedSalesSoFar`));
+    const averageGwp = parseNumber(formData.get(`${typeKey}__averageGwp`));
+    const totalGwpSoFar = Number(convertedSalesSoFar) * Number(averageGwp);
+
+    const baselinePayload: MonthlyContactBaselineUpsert = {
       consultant_month_id: monthRow.id,
-      entry_date: entryDate,
-      source: "baseline" as const,
-      contact_type_id: type.id,
-      outcome_id: null,
-      contact_count: contacts,
-      converted_sales_count: convertedSales,
-      sales_points: salesPoints,
-      average_gwp_input: averageGwp,
-      hidden_total_gwp: hiddenTotalGwp,
-      reason: null,
+      user_id: user.id,
+      contact_type_key: typeKey,
+      total_contacts_so_far: totalContactsSoFar,
+      converted_sales_so_far: convertedSalesSoFar,
+      total_gwp_so_far: totalGwpSoFar,
     };
 
+    logSupabasePayload("monthly_contact_baselines", baselinePayload);
+
+    const { data: existing } = await supabase
+      .from("monthly_contact_baselines")
+      .select("id")
+      .eq("consultant_month_id", monthRow.id)
+      .eq("contact_type_key", typeKey)
+      .maybeSingle();
+
     if (existing) {
-      const { error } = await supabase.from("performance_entries").update(payload).eq("id", existing.id);
+      const { error } = await supabase
+        .from("monthly_contact_baselines")
+        .update(baselinePayload)
+        .eq("id", existing.id)
+        .eq("user_id", user.id);
+
       if (error) {
-        return { error: error.message };
+        logSupabaseError("monthly_contact_baselines", error);
+        return { error: error.message, status: 400 };
       }
+      console.log("[supabase] monthly_contact_baselines update success:", existing.id);
     } else {
-      const { error } = await supabase.from("performance_entries").insert(payload);
+      const { error } = await supabase.from("monthly_contact_baselines").insert(baselinePayload);
       if (error) {
-        return { error: error.message };
+        logSupabaseError("monthly_contact_baselines", error);
+        return { error: error.message, status: 400 };
       }
+      console.log("[supabase] monthly_contact_baselines insert success");
     }
   }
 
@@ -113,65 +180,103 @@ export async function persistManualBaseline(
 
 export async function persistManualAdjustment(
   supabase: SupabaseClient,
-  userId: string,
   formData: FormData
-): Promise<PerformanceActionState> {
-  const consultantMonthId = String(formData.get("consultantMonthId") ?? "");
-  const entryDate = String(formData.get("adjustmentDate") ?? "");
+): Promise<PerformanceActionState & { status?: number }> {
+  const authResult = await requireAuthenticatedUser(supabase);
+  if (!authResult.ok) {
+    return { error: authResult.error, status: authResult.status };
+  }
+
+  const user = authResult.user;
+  const parentResult = await ensureParentUserRows(supabase, user);
+  if (!parentResult.ok) {
+    return { error: parentResult.error, status: 400 };
+  }
+
+  let consultantMonthId = String(formData.get("consultantMonthId") ?? "").trim();
+  const adjustmentDate = String(formData.get("adjustmentDate") ?? "");
   const reason = String(formData.get("adjustmentReason") ?? "").trim();
 
-  if (!consultantMonthId || !entryDate || !reason) {
-    return { error: "Date and reason are required for manual adjustments." };
+  if (!adjustmentDate || !reason) {
+    return { error: "Date and reason are required for manual adjustments.", status: 400 };
   }
 
-  const { data: month } = await supabase
-    .from("consultant_months")
-    .select("id")
-    .eq("id", consultantMonthId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!month) {
-    return { error: "Consultant month not found." };
+  if (!consultantMonthId) {
+    const { monthRow, error: monthError } = await upsertConsultantMonth(supabase, user.id, formData);
+    if (monthError || !monthRow) {
+      return { error: monthError ?? "Consultant month not found.", status: 400 };
+    }
+    consultantMonthId = monthRow.id;
+  } else {
+    const { data: month } = await supabase
+      .from("consultant_months")
+      .select("id")
+      .eq("id", consultantMonthId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!month) {
+      return { error: "Consultant month not found.", status: 400 };
+    }
   }
 
-  const { data: contactTypes } = await supabase.from("contact_types").select("id,slug,points");
-  if (!contactTypes || contactTypes.length === 0) {
-    return { error: "Contact types are missing. Run updated schema.sql first." };
+  let contactTypes: ContactTypeRow[];
+  try {
+    contactTypes = await fetchContactTypesForSave(supabase);
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Failed to load contact types.",
+      status: 400,
+    };
   }
 
-  const entries = contactTypes
-    .map((type) => {
-      const contacts = parseNumber(formData.get(`${type.slug}__contacts`));
-      const convertedSales = parseNumber(formData.get(`${type.slug}__convertedSales`));
-      const averageGwp = parseNumber(formData.get(`${type.slug}__averageGwp`));
-      if (contacts === 0 && convertedSales === 0 && averageGwp === 0) {
-        return null;
-      }
+  const rowsToInsert: ManualContactAdjustmentInsert[] = [];
 
+  for (const type of contactTypes) {
+    const typeKey = type.type_key;
+
+    try {
+      assertValidContactTypeKey(typeKey);
+    } catch (err) {
       return {
-        consultant_month_id: consultantMonthId,
-        entry_date: entryDate,
-        source: "manual_adjustment" as const,
-        contact_type_id: type.id,
-        outcome_id: null,
-        contact_count: contacts,
-        converted_sales_count: convertedSales,
-        sales_points: convertedSales * Number(type.points),
-        average_gwp_input: averageGwp,
-        hidden_total_gwp: convertedSales * averageGwp,
-        reason,
+        error: err instanceof Error ? err.message : `Invalid contact_type_key: ${typeKey}`,
+        status: 400,
       };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+    }
 
-  if (entries.length === 0) {
-    return { error: "Enter at least one non-zero adjustment row." };
+    const contactsDelta = parseNumber(formData.get(`${typeKey}__contactsDelta`));
+    const convertedSalesDelta = parseNumber(formData.get(`${typeKey}__convertedSalesDelta`));
+    const averageGwp = parseNumber(formData.get(`${typeKey}__averageGwp`));
+
+    if (contactsDelta === 0 && convertedSalesDelta === 0 && averageGwp === 0) {
+      continue;
+    }
+
+    rowsToInsert.push({
+      consultant_month_id: consultantMonthId,
+      user_id: user.id,
+      adjustment_date: adjustmentDate,
+      contact_type_key: typeKey,
+      contacts_delta: contactsDelta,
+      converted_sales_delta: convertedSalesDelta,
+      total_gwp_delta: totalGwpFromAverage(convertedSalesDelta, averageGwp),
+      reason,
+    });
   }
 
-  const { error } = await supabase.from("performance_entries").insert(entries);
-  if (error) {
-    return { error: error.message };
+  if (rowsToInsert.length === 0) {
+    return { error: "Enter at least one non-zero adjustment row.", status: 400 };
   }
 
+  for (const row of rowsToInsert) {
+    logSupabasePayload("manual_contact_adjustments", row);
+    const { error } = await supabase.from("manual_contact_adjustments").insert(row);
+    if (error) {
+      logSupabaseError("manual_contact_adjustments", error);
+      return { error: error.message, status: 400 };
+    }
+  }
+
+  console.log("[supabase] manual_contact_adjustments save success:", rowsToInsert.length, "rows");
   return { success: true, message: "Manual adjustment saved." };
 }

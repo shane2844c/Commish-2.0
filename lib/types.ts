@@ -23,75 +23,115 @@ export type PerformanceActionState = {
 
 export type Profile = {
   id: string;
-  full_name: string | null;
   email: string | null;
+  full_name: string | null;
   created_at: string;
+  updated_at?: string;
 };
 
 export type ConsultantMonthRow = {
   id: string;
   user_id: string;
-  month_start: string;
+  month: number;
+  year: number;
   employment_type: EmploymentTypeDb;
   full_time_points_target: number;
   full_time_rostered_days: number;
-  user_rostered_days: number;
-  completed_rostered_days: number;
-  join_date?: string | null;
-  baseline_completed_at?: string | null;
+  total_rostered_days_this_month: number;
+  completed_rostered_days_so_far: number;
   created_at: string;
+  updated_at?: string;
+};
+
+export type ConsultantMonthUpsert = {
+  user_id: string;
+  month: number;
+  year: number;
+  employment_type: EmploymentTypeDb;
+  full_time_points_target: number;
+  full_time_rostered_days: number;
+  total_rostered_days_this_month: number;
+  completed_rostered_days_so_far: number;
 };
 
 export type ContactTypeRow = {
-  id: string;
-  slug: string;
-  name: string;
-  points: number;
+  type_key: string;
+  display_name: string;
+  points_per_sale: number;
   expected_conversion_rate: number;
   sort_order: number;
-  is_active: boolean;
+  created_at: string;
 };
 
-export type ContactOutcomeRow = {
-  id: string;
-  slug: string;
-  name: string;
-  counts_for_conversion_denominator: boolean;
-  counts_as_sale: boolean;
-  is_excluded: boolean;
-  is_misdisposition: boolean;
-  sort_order: number;
-  is_active: boolean;
-};
-
-export type PerformanceEntryRow = {
+export type MonthlyContactBaselineRow = {
   id: string;
   consultant_month_id: string;
-  entry_date: string | null;
-  source: "baseline" | "daily" | "manual_adjustment";
-  contact_type_id: string;
-  outcome_id: string | null;
-  contact_count: number;
-  converted_sales_count: number;
-  sales_points: number;
-  average_gwp_input: number | null;
-  hidden_total_gwp: number;
-  reason: string | null;
+  user_id: string;
+  contact_type_key: string;
+  total_contacts_so_far: number;
+  converted_sales_so_far: number;
+  total_gwp_so_far: number;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 };
 
-export type DailyContactLogRow = {
+export type MonthlyContactBaselineUpsert = {
+  consultant_month_id: string;
+  user_id: string;
+  contact_type_key: string;
+  total_contacts_so_far: number;
+  converted_sales_so_far: number;
+  total_gwp_so_far: number;
+};
+
+export type DailyContactEntryRow = {
   id: string;
+  consultant_month_id: string;
+  user_id: string;
   entry_date: string;
+  contact_type_key: string;
+  contacts_count: number;
+  converted_sales_count: number;
+  total_gwp: number;
+  notes: string | null;
   created_at: string;
-  contactTypeId: string;
-  contactTypeName: string;
-  contactTypePoints: number;
-  outcomeId: string;
-  outcomeName: string;
-  salesPoints: number;
-  saleGwp: number;
+  updated_at?: string;
+};
+
+export type DailyContactEntryUpsert = {
+  consultant_month_id: string;
+  user_id: string;
+  entry_date: string;
+  contact_type_key: string;
+  contacts_count: number;
+  converted_sales_count: number;
+  total_gwp: number;
+  notes: string | null;
+};
+
+export type ManualContactAdjustmentRow = {
+  id: string;
+  consultant_month_id: string;
+  user_id: string;
+  adjustment_date: string;
+  contact_type_key: string;
+  contacts_delta: number;
+  converted_sales_delta: number;
+  total_gwp_delta: number;
+  reason: string;
+  created_at: string;
+  updated_at?: string;
+};
+
+export type ManualContactAdjustmentInsert = {
+  consultant_month_id: string;
+  user_id: string;
+  adjustment_date: string;
+  contact_type_key: string;
+  contacts_delta: number;
+  converted_sales_delta: number;
+  total_gwp_delta: number;
+  reason: string;
 };
 
 export type ManualInputDefaultValues = {
@@ -100,43 +140,54 @@ export type ManualInputDefaultValues = {
   employmentType: EmploymentTypeUi;
   fullTimePointsTarget: number;
   fullTimeRosteredDays: number;
-  totalRosteredDays: number;
-  completedRosteredDays: number;
+  totalRosteredDaysThisMonth: number;
+  completedRosteredDaysSoFar: number;
   baselineByContactType: Record<
     string,
     {
-      contacts: number;
-      convertedSales: number;
-      averageGwp: number;
+      totalContactsSoFar: number;
+      convertedSalesSoFar: number;
+      totalGwpSoFar: number;
     }
   >;
 };
 
-export type ConsultantPerformanceRow = {
-  consultant_month_id: string;
-  user_id: string;
-  month_start: string;
-  eligible_contacts: number;
-  mtd_sales: number;
-  mtd_conversion_rate: number;
-  mtd_target_conversion: number;
-  percent_to_target_conversion: number;
-  mtd_conversion_multiplier: number;
-  mtd_total_sales_points: number;
-  points_target: number;
-  mtd_total_gwp: number;
-  average_gwp: number;
-  base_dpp: number;
-  gwp_payable_per_point: number;
-  mtd_dpp: number;
-  mtd_commission: number;
-  completed_rostered_days: number;
-  total_rostered_days: number;
-  projected_total_sales_points: number;
-  projected_dpp: number;
-  projected_gwp_payable_per_point: number;
-  projected_conversion_multiplier: number;
-  projected_commission: number;
+export type AdjustmentHistoryRow = {
+  id: string;
+  adjustmentDate: string;
+  reason: string;
+  contactTypeName: string;
+  contactsDelta: number;
+  convertedSalesDelta: number;
+  salesPointsDelta: number;
+};
+
+export type ConsultantPerformanceStats = {
+  consultantMonthId: string;
+  userId: string;
+  month: number;
+  year: number;
+  eligibleContacts: number;
+  mtdSales: number;
+  mtdConversionRate: number;
+  mtdTargetConversion: number;
+  percentToTargetConversion: number;
+  mtdConversionMultiplier: number;
+  mtdTotalSalesPoints: number;
+  pointsTarget: number;
+  mtdTotalGwp: number;
+  averageGwp: number;
+  baseDpp: number;
+  gwpPayablePerPoint: number;
+  mtdDpp: number;
+  mtdCommission: number;
+  completedRosteredDaysSoFar: number;
+  totalRosteredDaysThisMonth: number;
+  projectedTotalSalesPoints: number;
+  projectedDpp: number;
+  projectedGwpPayablePerPoint: number;
+  projectedConversionMultiplier: number;
+  projectedCommission: number;
 };
 
 export type LeaderboardRow = {
@@ -153,45 +204,28 @@ export type LeaderboardRow = {
 
 export function rowToManualInputDefaults(
   monthRow: ConsultantMonthRow,
-  baselineRows: Array<
-    PerformanceEntryRow & { contact_type: Pick<ContactTypeRow, "slug" | "points"> | null }
-  >
+  baselineRows: MonthlyContactBaselineRow[]
 ): ManualInputDefaultValues {
   const baselineByContactType: ManualInputDefaultValues["baselineByContactType"] = {};
 
   baselineRows.forEach((row) => {
-    if (!row.contact_type) {
-      return;
-    }
-    const convertedSales = Number(row.converted_sales_count);
-    baselineByContactType[row.contact_type.slug] = {
-      contacts: Number(row.contact_count),
-      convertedSales,
-      averageGwp: convertedSales > 0 ? Number(row.hidden_total_gwp) / convertedSales : 0,
+    baselineByContactType[row.contact_type_key] = {
+      totalContactsSoFar: Number(row.total_contacts_so_far),
+      convertedSalesSoFar: Number(row.converted_sales_so_far),
+      totalGwpSoFar: Number(row.total_gwp_so_far),
     };
   });
 
-  const { month, year } = fromMonthStart(monthRow.month_start);
-
   return {
-    month,
-    year,
+    month: Number(monthRow.month),
+    year: Number(monthRow.year),
     employmentType: employmentTypeFromDb(monthRow.employment_type),
     fullTimePointsTarget: Number(monthRow.full_time_points_target),
     fullTimeRosteredDays: Number(monthRow.full_time_rostered_days),
-    totalRosteredDays: Number(monthRow.user_rostered_days),
-    completedRosteredDays: Number(monthRow.completed_rostered_days ?? 0),
+    totalRosteredDaysThisMonth: Number(monthRow.total_rostered_days_this_month),
+    completedRosteredDaysSoFar: Number(monthRow.completed_rostered_days_so_far),
     baselineByContactType,
   };
-}
-
-export function toMonthStart(month: number, year: number): string {
-  return `${year}-${String(month).padStart(2, "0")}-01`;
-}
-
-export function fromMonthStart(monthStart: string): { month: number; year: number } {
-  const [yearPart, monthPart] = monthStart.split("-");
-  return { month: Number(monthPart), year: Number(yearPart) };
 }
 
 export function getCurrentMonthYear(): { month: number; year: number } {
@@ -199,7 +233,10 @@ export function getCurrentMonthYear(): { month: number; year: number } {
   return { month: now.getMonth() + 1, year: now.getFullYear() };
 }
 
-export function getCurrentMonthStart(): string {
-  const { month, year } = getCurrentMonthYear();
-  return toMonthStart(month, year);
+export function averageGwpFromTotals(convertedSales: number, totalGwp: number): number {
+  return convertedSales > 0 ? totalGwp / convertedSales : 0;
+}
+
+export function totalGwpFromAverage(convertedSales: number, averageGwp: number): number {
+  return convertedSales * averageGwp;
 }
