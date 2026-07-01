@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateMonthlyKpis, validateRosteredDayOff } from "@/lib/monthlyKpi/roster";
+import { syncConsultantMonthMetrics } from "@/lib/metrics/syncConsultantMonthMetrics";
 import { logSupabaseError } from "@/lib/supabase/logPayload";
 import type {
   ConsultantMonthRow,
@@ -167,6 +168,11 @@ export async function addRosteredDayOff(
     return { error: recalc.error, status: 400 };
   }
 
+  const syncResult = await syncConsultantMonthMetrics(supabase, consultantMonthId);
+  if (syncResult.error) {
+    return { error: syncResult.error, status: 400 };
+  }
+
   return { success: true, message: "Rostered day off added." };
 }
 
@@ -207,6 +213,11 @@ export async function removeRosteredDayOff(
   const recalc = await recalculateAndUpdateMonthKpis(supabase, existing.consultant_month_id);
   if (recalc.error) {
     return { error: recalc.error, status: 400, offDate: existing.off_date };
+  }
+
+  const syncResult = await syncConsultantMonthMetrics(supabase, existing.consultant_month_id);
+  if (syncResult.error) {
+    return { error: syncResult.error, status: 400, offDate: existing.off_date };
   }
 
   return { success: true, message: "Rostered day off removed.", offDate: existing.off_date };

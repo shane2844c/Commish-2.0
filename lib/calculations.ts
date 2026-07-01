@@ -131,7 +131,50 @@ function countDistinctContactEntryDates(dailyEntries: DailyContactEntryRow[]): n
   return dates.size;
 }
 
+export type ConsultantMonthMetricsInput = {
+  consultantMonth: ConsultantMonthRow;
+  baselines: MonthlyContactBaselineRow[];
+  dailyEntries: DailyContactEntryRow[];
+  manualAdjustments: ManualContactAdjustmentRow[];
+  contactTypes: ContactTypeRow[];
+  offDates?: string[];
+};
+
+export function calculateConsultantMonthMetrics(
+  input: ConsultantMonthMetricsInput
+): ConsultantPerformanceStats {
+  const stats = calculateConsultantPerformanceFromRaw(
+    input.consultantMonth,
+    input.baselines,
+    input.dailyEntries,
+    input.manualAdjustments,
+    input.contactTypes,
+    input.offDates ?? []
+  );
+
+  console.log("Calculated dashboard metrics:", stats);
+  return stats;
+}
+
 export function calculateConsultantPerformance(
+  month: ConsultantMonthRow,
+  baselines: MonthlyContactBaselineRow[],
+  dailyEntries: DailyContactEntryRow[],
+  adjustments: ManualContactAdjustmentRow[],
+  contactTypes: ContactTypeRow[],
+  offDates: string[] = []
+): ConsultantPerformanceStats {
+  return calculateConsultantMonthMetrics({
+    consultantMonth: month,
+    baselines,
+    dailyEntries,
+    manualAdjustments: adjustments,
+    contactTypes,
+    offDates,
+  });
+}
+
+function calculateConsultantPerformanceFromRaw(
   month: ConsultantMonthRow,
   baselines: MonthlyContactBaselineRow[],
   dailyEntries: DailyContactEntryRow[],
@@ -225,9 +268,20 @@ export function calculateConsultantPerformance(
   });
   const mtdDpp = getDppForPoints(mtdTotalSalesPoints, adjustedBrackets);
   const gwpAcceleratorDpp = getGwpAcceleratorDpp(averageGwp);
-  const mtdBaseCommission = mtdTotalSalesPoints * mtdDpp * conversionMultiplier;
-  const mtdGwpAccelerator = mtdTotalSalesPoints * gwpAcceleratorDpp;
-  const mtdCommission = mtdBaseCommission + mtdGwpAccelerator;
+  const hasMtdPayableBracket = mtdDpp > 0;
+  const mtdBaseCommission = hasMtdPayableBracket
+    ? mtdTotalSalesPoints * mtdDpp * conversionMultiplier
+    : 0;
+  const mtdGwpAccelerator = hasMtdPayableBracket
+    ? mtdTotalSalesPoints * gwpAcceleratorDpp
+    : 0;
+  const mtdCommission = hasMtdPayableBracket ? mtdBaseCommission + mtdGwpAccelerator : 0;
+
+  console.log("MTD Sales Points:", mtdTotalSalesPoints);
+  console.log("MTD DPP:", mtdDpp);
+  console.log("MTD GWP Accelerator:", gwpAcceleratorDpp);
+  console.log("MTD Has Payable Bracket:", hasMtdPayableBracket);
+  console.log("MTD Commission:", mtdCommission);
 
   const completedDays = monthKpis.completedRosteredDaysSoFar;
   const totalRosteredDays = monthKpis.totalRosteredDaysThisMonth;
@@ -242,22 +296,16 @@ export function calculateConsultantPerformance(
   const projectedDpp = getDppForPoints(projectedTotalSalesPoints, adjustedBrackets);
   const projectedConversionMultiplier = getConversionMultiplier(percentToTargetConversion);
   const projectedGwpAcceleratorDpp = getGwpAcceleratorDpp(averageGwp);
-  const projectedCommission =
-    projectedTotalSalesPoints * projectedDpp * projectedConversionMultiplier +
-    projectedTotalSalesPoints * projectedGwpAcceleratorDpp;
+  const hasProjectedPayableBracket = projectedDpp > 0;
+  const projectedCommission = hasProjectedPayableBracket
+    ? projectedTotalSalesPoints * projectedDpp * projectedConversionMultiplier +
+      projectedTotalSalesPoints * projectedGwpAcceleratorDpp
+    : 0;
 
-  console.log("MTD Sales Points:", mtdTotalSalesPoints);
-  console.log("Adjusted Brackets:", adjustedBrackets);
-  console.log("MTD DPP:", mtdDpp);
-  console.log("Average GWP:", averageGwp);
-  console.log("GWP Accelerator DPP:", gwpAcceleratorDpp);
-  console.log("Conversion Multiplier:", conversionMultiplier);
-  console.log("MTD Base Commission:", mtdBaseCommission);
-  console.log("MTD GWP Accelerator:", mtdGwpAccelerator);
-  console.log("MTD Commission:", mtdCommission);
-  console.log("Projection Days:", projectionDays);
   console.log("Projected Points:", projectedTotalSalesPoints);
   console.log("Projected DPP:", projectedDpp);
+  console.log("Projected GWP Accelerator:", projectedGwpAcceleratorDpp);
+  console.log("Projected Has Payable Bracket:", hasProjectedPayableBracket);
   console.log("Projected Commission:", projectedCommission);
 
   return {

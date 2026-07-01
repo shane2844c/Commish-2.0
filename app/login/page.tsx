@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import LoginForm from "@/components/LoginForm";
+import { getPostAuthRedirectPath } from "@/lib/profiles/usernamePersistence";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function LoginPage() {
@@ -9,7 +10,7 @@ export default async function LoginPage() {
   } = await supabase.auth.getUser();
 
   if (user) {
-    redirect("/dashboard");
+    redirect(await getPostAuthRedirectPath(supabase, user.id));
   }
 
   return (

@@ -28,9 +28,37 @@ export type Profile = {
   id: string;
   email: string | null;
   full_name: string | null;
+  display_name: string | null;
+  username: string | null;
   created_at: string;
   updated_at?: string;
 };
+
+export type ConsultantMonthMetricsRow = {
+  id: string;
+  consultant_month_id: string;
+  user_id: string;
+  month: number;
+  year: number;
+  mtd_target_conversion: number;
+  mtd_conversion_rate: number;
+  percent_to_target_conversion: number;
+  mtd_conversion_multiplier: number;
+  mtd_total_sales_points: number;
+  points_target: number;
+  average_gwp: number;
+  mtd_dpp: number;
+  gwp_accelerator_per_point: number;
+  mtd_commission: number;
+  projected_total_sales_points: number;
+  projected_dpp: number;
+  projected_gwp_payable_per_point: number;
+  projected_conversion_multiplier: number;
+  projected_commission: number;
+  updated_at: string;
+};
+
+export type ConsultantMonthMetricsUpsert = Omit<ConsultantMonthMetricsRow, "id">;
 
 export type ConsultantMonthRow = {
   id: string;
@@ -236,15 +264,25 @@ export type ConsultantPerformanceStats = {
 };
 
 export type LeaderboardRow = {
-  rank: number;
+  position: number;
   userId: string;
+  consultantMonthId: string;
   name: string;
-  mtdCommission: number;
-  projectedCommission: number;
-  mtdTotalSalesPoints: number;
-  mtdDpp: number;
-  averageGwp: number;
+  mtdTargetConversion: number;
+  mtdConversionRate: number;
   percentToTargetConversion: number;
+  mtdConversionMultiplier: number;
+  mtdTotalSalesPoints: number;
+  pointsTarget: number;
+  averageGwp: number;
+  mtdDpp: number;
+  gwpAcceleratorPerPoint: number;
+  mtdCommission: number;
+  projectedTotalSalesPoints: number;
+  projectedDpp: number;
+  projectedGwpPayablePerPoint: number;
+  projectedConversionMultiplier: number;
+  projectedCommission: number;
 };
 
 export function rowToManualInputDefaults(

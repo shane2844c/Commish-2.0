@@ -4,6 +4,7 @@ import { assertValidContactTypeKey } from "@/lib/contactTypes/keys";
 import type { DailyContactEntryInsert, PerformanceActionState } from "@/lib/types";
 import { ensureParentUserRows, requireAuthenticatedUser } from "@/lib/supabase/ensureParentUser";
 import { logSupabasePayload, logSupabaseError } from "@/lib/supabase/logPayload";
+import { syncConsultantMonthMetrics } from "@/lib/metrics/syncConsultantMonthMetrics";
 
 function parseNumber(value: FormDataEntryValue | null, fallback = 0): number {
   if (value === null || value === "") {
@@ -134,6 +135,11 @@ export async function persistDailyContact(
     console.log("[supabase] daily_contact_entries insert success");
   }
 
+  const syncResult = await syncConsultantMonthMetrics(supabase, consultantMonthId);
+  if (syncResult.error) {
+    return { error: syncResult.error, status: 400 };
+  }
+
   return { success: true };
 }
 
@@ -152,7 +158,7 @@ export async function removeDailyContact(
 
   const { data: existing } = await supabase
     .from("daily_contact_entries")
-    .select("id")
+    .select("id, consultant_month_id")
     .eq("id", entryId)
     .eq("user_id", authResult.user.id)
     .maybeSingle();
@@ -160,6 +166,8 @@ export async function removeDailyContact(
   if (!existing) {
     return { error: "Daily contact entry not found.", status: 400 };
   }
+
+  const consultantMonthId = existing.consultant_month_id as string;
 
   logSupabasePayload("daily_contact_entries (delete)", { id: entryId });
 
@@ -175,5 +183,11 @@ export async function removeDailyContact(
   }
 
   console.log("[supabase] daily_contact_entries delete success:", entryId);
+
+  const syncResult = await syncConsultantMonthMetrics(supabase, consultantMonthId);
+  if (syncResult.error) {
+    return { error: syncResult.error, status: 400 };
+  }
+
   return { success: true };
 }

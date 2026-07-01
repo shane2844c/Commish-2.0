@@ -36,5 +36,5 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ success: true, redirectTo: "/setup" });
+  return NextResponse.json({ success: true, redirectTo: "/setup-username" });
 }

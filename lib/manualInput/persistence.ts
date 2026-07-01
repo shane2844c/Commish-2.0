@@ -13,6 +13,7 @@ import { employmentTypeFromDb, employmentTypeToDb, totalGwpFromAverage } from "@
 import { ensureParentUserRows, requireAuthenticatedUser } from "@/lib/supabase/ensureParentUser";
 import { logSupabasePayload, logSupabaseError } from "@/lib/supabase/logPayload";
 import { upsertConsultantMonthRecord } from "@/lib/manualInput/consultantMonthUpsert";
+import { syncConsultantMonthMetrics } from "@/lib/metrics/syncConsultantMonthMetrics";
 
 function parseNumber(value: FormDataEntryValue | null, fallback = 0): number {
   if (value === null || value === "") {
@@ -239,6 +240,11 @@ export async function persistManualBaseline(
 
   console.log("[supabase] monthly_contact_baselines save success:", baselinePayloads.length, "rows");
 
+  const syncResult = await syncConsultantMonthMetrics(supabase, monthRow.id);
+  if (syncResult.error) {
+    return { error: syncResult.error, status: 400 };
+  }
+
   return { success: true, message: "Baseline saved." };
 }
 
@@ -342,5 +348,11 @@ export async function persistManualAdjustment(
   }
 
   console.log("[supabase] manual_contact_adjustments save success:", rowsToInsert.length, "rows");
+
+  const syncResult = await syncConsultantMonthMetrics(supabase, consultantMonthId);
+  if (syncResult.error) {
+    return { error: syncResult.error, status: 400 };
+  }
+
   return { success: true, message: "Manual adjustment saved." };
 }

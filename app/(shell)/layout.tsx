@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import { hasUsername } from "@/lib/profiles/usernameValidation";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +21,13 @@ export default async function ShellLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name")
+    .select("username")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
-  return <AppShell userName={profile?.full_name}>{children}</AppShell>;
+  if (!hasUsername(profile?.username)) {
+    redirect("/setup-username");
+  }
+
+  return <AppShell userName={profile?.username?.trim() ?? null}>{children}</AppShell>;
 }

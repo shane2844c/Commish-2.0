@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getPostAuthRedirectPath } from "@/lib/profiles/usernamePersistence";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
@@ -12,11 +13,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
   }
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  return NextResponse.json({ success: true, redirectTo: "/dashboard" });
+  const redirectTo = data.user
+    ? await getPostAuthRedirectPath(supabase, data.user.id)
+    : "/setup-username";
+
+  return NextResponse.json({ success: true, redirectTo });
 }

@@ -1,44 +1,30 @@
-import LeaderboardTable from "@/components/LeaderboardTable";
-import { fetchLeaderboardPerformance } from "@/lib/performance/queries";
+import LeaderboardClient from "@/components/LeaderboardClient";
+import { fetchLeaderboardRows } from "@/lib/metrics/leaderboardQueries";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentMonthYear, type LeaderboardRow, type Profile } from "@/lib/types";
+import { getCurrentMonthYear } from "@/lib/types";
+import { redirect } from "next/navigation";
 
-export default async function LeaderboardPage() {
+type LeaderboardPageProps = {
+  searchParams: Promise<{ month?: string; year?: string }>;
+};
+
+export default async function LeaderboardPage({ searchParams }: LeaderboardPageProps) {
   const supabase = await createClient();
-  const { month, year } = getCurrentMonthYear();
-  const performanceRows = await fetchLeaderboardPerformance(supabase, month, year);
-  const userIds = performanceRows.map((row) => row.userId);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  let profiles: Profile[] = [];
-
-  if (userIds.length > 0) {
-    const { data: profileRows } = await supabase
-      .from("profiles")
-      .select("id, full_name, email, created_at")
-      .in("id", userIds);
-
-    profiles = profileRows ?? [];
+  if (!user) {
+    redirect("/login");
   }
 
-  const profileMap = new Map(profiles.map((p) => [p.id, p]));
+  const params = await searchParams;
+  const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
 
-  const leaderboardRows: LeaderboardRow[] = performanceRows
-    .map((row) => {
-      const userProfile = profileMap.get(row.userId);
-      return {
-        userId: row.userId,
-        name: userProfile?.full_name || userProfile?.email || "Unknown",
-        mtdCommission: row.mtdCommission,
-        projectedCommission: row.projectedCommission,
-        mtdTotalSalesPoints: row.mtdTotalSalesPoints,
-        mtdDpp: row.mtdDpp,
-        averageGwp: row.averageGwp,
-        percentToTargetConversion: row.percentToTargetConversion,
-        rank: 0,
-      };
-    })
-    .sort((a, b) => b.mtdCommission - a.mtdCommission)
-    .map((row, index) => ({ ...row, rank: index + 1 }));
+  const month = Number(params.month || currentMonth);
+  const year = Number(params.year || currentYear);
+
+  const leaderboardRows = await fetchLeaderboardRows(supabase, month, year);
 
   const monthLabel = new Date(year, month - 1).toLocaleString("default", {
     month: "long",
@@ -50,10 +36,17 @@ export default async function LeaderboardPage() {
       <div className="mb-8">
         <h2 className="text-3xl font-semibold text-[var(--foreground)]">Leaderboard</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Ranked by MTD commission — {monthLabel}
+          Ranked by current MTD commission. Supporting metrics explain each consultant&apos;s
+          performance.
         </p>
       </div>
-      <LeaderboardTable rows={leaderboardRows} />
+      <LeaderboardClient
+        rows={leaderboardRows}
+        month={month}
+        year={year}
+        monthLabel={monthLabel}
+        currentUserId={user.id}
+      />
     </>
   );
 }

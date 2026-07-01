@@ -121,10 +121,8 @@ export default function AppShell({ children, userName }: AppShellProps) {
             })}
           </nav>
           <div className="mt-8 rounded-lg border border-[var(--border)] bg-[#f9fbfe] p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Brand Theme</p>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Compare the Market-inspired internal consultant view.
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Signed in as</p>
+            <p className="mt-1 text-sm font-medium text-[var(--foreground)]">{userName ?? "Consultant"}</p>
           </div>
           <button
             type="button"
