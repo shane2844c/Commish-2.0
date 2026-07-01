@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-import DashboardShell from "@/components/DashboardShell";
 import LeaderboardTable from "@/components/LeaderboardTable";
 import { fetchLeaderboardPerformance } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
@@ -7,20 +5,6 @@ import { getCurrentMonthYear, type LeaderboardRow, type Profile } from "@/lib/ty
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", user.id)
-    .single();
-
   const { month, year } = getCurrentMonthYear();
   const performanceRows = await fetchLeaderboardPerformance(supabase, month, year);
   const userIds = performanceRows.map((row) => row.userId);
@@ -62,7 +46,7 @@ export default async function LeaderboardPage() {
   });
 
   return (
-    <DashboardShell userName={profile?.full_name} activeItem="leaderboard">
+    <>
       <div className="mb-8">
         <h2 className="text-3xl font-semibold text-[var(--foreground)]">Leaderboard</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
@@ -70,6 +54,6 @@ export default async function LeaderboardPage() {
         </p>
       </div>
       <LeaderboardTable rows={leaderboardRows} />
-    </DashboardShell>
+    </>
   );
 }

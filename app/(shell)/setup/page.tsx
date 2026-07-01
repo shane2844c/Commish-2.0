@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-import DashboardShell from "@/components/DashboardShell";
 import ManualInputClient from "@/components/ManualInputClient";
 import {
   contactTypeDisplayName,
@@ -24,23 +22,13 @@ export default async function SetupPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", user.id)
-    .single();
-
   const contactTypes = mapContactTypeRows(await fetchContactTypes(supabase));
   const { month, year } = getCurrentMonthYear();
 
   const { data: existingSetup } = await supabase
     .from("consultant_months")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("user_id", user!.id)
     .eq("month", month)
     .eq("year", year)
     .maybeSingle();
@@ -65,13 +53,13 @@ export default async function SetupPage() {
         .from("monthly_contact_baselines")
         .select("*")
         .eq("consultant_month_id", existingSetup.id)
-        .eq("user_id", user.id)
+        .eq("user_id", user!.id)
         .order("created_at", { ascending: true }),
       supabase
         .from("manual_contact_adjustments")
         .select("*")
         .eq("consultant_month_id", existingSetup.id)
-        .eq("user_id", user.id)
+        .eq("user_id", user!.id)
         .order("created_at", { ascending: false }),
     ]);
 
@@ -93,7 +81,7 @@ export default async function SetupPage() {
   }
 
   return (
-    <DashboardShell userName={profile?.full_name} activeItem="manual-input">
+    <>
       <div className="mb-6">
         <h2 className="text-3xl font-semibold text-[var(--foreground)]">Manual Input</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
@@ -106,6 +94,6 @@ export default async function SetupPage() {
         adjustmentHistory={adjustmentHistory}
         contactTypes={contactTypes}
       />
-    </DashboardShell>
+    </>
   );
 }

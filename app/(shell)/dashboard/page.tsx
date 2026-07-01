@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import DashboardShell from "@/components/DashboardShell";
 import StatCard from "@/components/StatCard";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
 import { fetchConsultantPerformance } from "@/lib/performance/queries";
@@ -13,22 +11,12 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", user.id)
-    .single();
-
   const { month, year } = getCurrentMonthYear();
 
   const { data: setup } = await supabase
     .from("consultant_months")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("user_id", user!.id)
     .eq("month", month)
     .eq("year", year)
     .maybeSingle();
@@ -43,7 +31,7 @@ export default async function DashboardPage() {
   });
 
   return (
-    <DashboardShell userName={profile?.full_name} activeItem="dashboard">
+    <>
       <div className="mb-8">
         <h2 className="text-3xl font-semibold text-[var(--foreground)]">Dashboard</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">{monthLabel}</p>
@@ -93,7 +81,10 @@ export default async function DashboardPage() {
               <StatCard label="Points Target" value={formatCurrency(performance?.pointsTarget ?? 0)} />
               <StatCard label="MTD DPP" value={formatCurrency(performance?.mtdDpp ?? 0)} />
               <StatCard label="Average GWP" value={formatCurrency(performance?.averageGwp ?? 0)} />
-              <StatCard label="GWP/Point" value={formatCurrency(performance?.gwpPayablePerPoint ?? 0)} />
+              <StatCard
+                label="GWP Accelerator"
+                value={formatCurrency(performance?.gwpAcceleratorDpp ?? 0)}
+              />
               <StatCard
                 label="MTD Commission"
                 value={formatCurrency(performance?.mtdCommission ?? 0)}
@@ -102,6 +93,7 @@ export default async function DashboardPage() {
             </div>
           </div>
 
+          {(performance?.projectionDays ?? 0) > 0 && (
           <div className="mt-6">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Projection</h3>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -122,8 +114,9 @@ export default async function DashboardPage() {
               />
             </div>
           </div>
+          )}
         </>
       )}
-    </DashboardShell>
+    </>
   );
 }

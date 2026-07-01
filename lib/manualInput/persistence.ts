@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertValidContactTypeKey } from "@/lib/contactTypes/keys";
+import { dedupeBaselineRowsByContactType } from "@/lib/manualInput/baselines";
 import type {
   ConsultantMonthUpsert,
   ContactTypeRow,
@@ -118,6 +119,8 @@ export async function persistManualBaseline(
     return { error: "No contact types found in database.", status: 400 };
   }
 
+  const baselinePayloads: MonthlyContactBaselineUpsert[] = [];
+
   for (const type of contactTypes) {
     const typeKey = type.type_key;
 
@@ -133,47 +136,64 @@ export async function persistManualBaseline(
     const totalContactsSoFar = parseNumber(formData.get(`${typeKey}__totalContactsSoFar`));
     const convertedSalesSoFar = parseNumber(formData.get(`${typeKey}__convertedSalesSoFar`));
     const averageGwp = parseNumber(formData.get(`${typeKey}__averageGwp`));
-    const totalGwpSoFar = Number(convertedSalesSoFar) * Number(averageGwp);
 
     const baselinePayload: MonthlyContactBaselineUpsert = {
       consultant_month_id: monthRow.id,
       user_id: user.id,
       contact_type_key: typeKey,
-      total_contacts_so_far: totalContactsSoFar,
-      converted_sales_so_far: convertedSalesSoFar,
-      total_gwp_so_far: totalGwpSoFar,
+      total_contacts_so_far: Number(totalContactsSoFar || 0),
+      converted_sales_so_far: Number(convertedSalesSoFar || 0),
+      total_gwp_so_far: Number(convertedSalesSoFar || 0) * Number(averageGwp || 0),
     };
 
+    console.log("Overwriting monthly baseline payload:", baselinePayload);
     logSupabasePayload("monthly_contact_baselines", baselinePayload);
+    baselinePayloads.push(baselinePayload);
+  }
 
-    const { data: existing } = await supabase
-      .from("monthly_contact_baselines")
-      .select("id")
-      .eq("consultant_month_id", monthRow.id)
-      .eq("contact_type_key", typeKey)
-      .maybeSingle();
+  const { data: existingRows } = await supabase
+    .from("monthly_contact_baselines")
+    .select("id, contact_type_key, created_at, updated_at")
+    .eq("consultant_month_id", monthRow.id)
+    .eq("user_id", user.id);
 
-    if (existing) {
-      const { error } = await supabase
+  if (existingRows && existingRows.length > 0) {
+    const keptIds = new Set(
+      dedupeBaselineRowsByContactType(existingRows).map((row) => row.id)
+    );
+    const duplicateIds = existingRows
+      .filter((row) => !keptIds.has(row.id))
+      .map((row) => row.id);
+
+    if (duplicateIds.length > 0) {
+      const { error: cleanupError } = await supabase
         .from("monthly_contact_baselines")
-        .update(baselinePayload)
-        .eq("id", existing.id)
+        .delete()
+        .in("id", duplicateIds)
         .eq("user_id", user.id);
 
-      if (error) {
-        logSupabaseError("monthly_contact_baselines", error);
-        return { error: error.message, status: 400 };
+      if (cleanupError) {
+        logSupabaseError("monthly_contact_baselines (duplicate cleanup)", cleanupError);
+        return { error: cleanupError.message, status: 400 };
       }
-      console.log("[supabase] monthly_contact_baselines update success:", existing.id);
-    } else {
-      const { error } = await supabase.from("monthly_contact_baselines").insert(baselinePayload);
-      if (error) {
-        logSupabaseError("monthly_contact_baselines", error);
-        return { error: error.message, status: 400 };
-      }
-      console.log("[supabase] monthly_contact_baselines insert success");
+
+      console.log(
+        "[supabase] removed duplicate monthly_contact_baselines rows:",
+        duplicateIds.length
+      );
     }
   }
+
+  const { error } = await supabase.from("monthly_contact_baselines").upsert(baselinePayloads, {
+    onConflict: "consultant_month_id,contact_type_key",
+  });
+
+  if (error) {
+    logSupabaseError("monthly_contact_baselines", error);
+    return { error: error.message, status: 400 };
+  }
+
+  console.log("[supabase] monthly_contact_baselines overwrite success:", baselinePayloads.length, "rows");
 
   return { success: true, message: "Baseline saved." };
 }

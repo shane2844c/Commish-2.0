@@ -6,6 +6,7 @@ import type {
   ManualContactAdjustmentRow,
   MonthlyContactBaselineRow,
 } from "@/lib/types";
+import { dedupeBaselineRowsByContactType } from "@/lib/manualInput/baselines";
 
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -20,20 +21,50 @@ export function formatNumber(value: number, decimals = 1): string {
 }
 
 export type CommissionBracket = {
-  minPoints: number;
+  points: number;
   dpp: number;
 };
 
-export const DPP_COMMISSION_BRACKETS: CommissionBracket[] = [
-  { minPoints: 250, dpp: 16 },
-  { minPoints: 200, dpp: 14 },
-  { minPoints: 150, dpp: 12 },
-  { minPoints: 100, dpp: 10 },
+export const FULL_TIME_COMMISSION_BRACKETS: CommissionBracket[] = [
+  { points: 45, dpp: 10 },
+  { points: 55, dpp: 15 },
+  { points: 65, dpp: 20 },
+  { points: 70, dpp: 25 },
+  { points: 75, dpp: 35 },
+  { points: 80, dpp: 45 },
+  { points: 85, dpp: 65 },
+  { points: 90, dpp: 85 },
+  { points: 100, dpp: 105 },
+  { points: 110, dpp: 115 },
 ];
+
+export const GWP_ACCELERATOR_BRACKETS = [
+  { minAverageGwp: 3800, extraDpp: 40 },
+  { minAverageGwp: 3500, extraDpp: 30 },
+  { minAverageGwp: 3200, extraDpp: 20 },
+] as const;
+
+export function getAdjustedCommissionBrackets(monthSetup: {
+  full_time_rostered_days?: number | null;
+  total_rostered_days_this_month?: number | null;
+}): CommissionBracket[] {
+  const fullTimeRosteredDays = Number(monthSetup.full_time_rostered_days || 23);
+  const totalRosteredDays = Number(
+    monthSetup.total_rostered_days_this_month || fullTimeRosteredDays
+  );
+
+  const rosterFactor =
+    fullTimeRosteredDays > 0 ? totalRosteredDays / fullTimeRosteredDays : 1;
+
+  return FULL_TIME_COMMISSION_BRACKETS.map((bracket) => ({
+    points: bracket.points * rosterFactor,
+    dpp: bracket.dpp,
+  }));
+}
 
 export function getDppForPoints(
   points: number,
-  brackets: CommissionBracket[] = DPP_COMMISSION_BRACKETS
+  adjustedBrackets: CommissionBracket[]
 ): number {
   const safePoints = Number(points || 0);
 
@@ -41,27 +72,35 @@ export function getDppForPoints(
     return 0;
   }
 
-  const matchedBracket = brackets
-    .filter((bracket) => safePoints >= bracket.minPoints)
-    .sort((a, b) => b.minPoints - a.minPoints)[0];
+  const matchedBracket = [...adjustedBrackets]
+    .sort((a, b) => b.points - a.points)
+    .find((bracket) => safePoints >= bracket.points);
 
   return matchedBracket?.dpp ?? 0;
 }
 
-function conversionMultiplier(percentToTarget: number): number {
-  if (percentToTarget >= 1.2) return 1.2;
-  if (percentToTarget >= 1.1) return 1.1;
-  if (percentToTarget >= 1) return 1;
-  if (percentToTarget >= 0.9) return 0.9;
-  return 0.8;
+export function getConversionMultiplier(percentToTargetConversion: number): number {
+  const safePercent = Number(percentToTargetConversion || 0);
+
+  if (safePercent < 0.8) {
+    return 0;
+  }
+
+  if (safePercent >= 1.2) {
+    return 1.2;
+  }
+
+  return safePercent;
 }
 
-function gwpPayablePerPoint(averageGwp: number): number {
-  if (averageGwp >= 160) return 2.5;
-  if (averageGwp >= 140) return 2;
-  if (averageGwp >= 120) return 1.5;
-  if (averageGwp >= 100) return 1;
-  return 0;
+export function getGwpAcceleratorDpp(averageGwp: number): number {
+  const safeAverageGwp = Number(averageGwp || 0);
+
+  const matched = GWP_ACCELERATOR_BRACKETS.find(
+    (bracket) => safeAverageGwp >= bracket.minAverageGwp
+  );
+
+  return matched?.extraDpp ?? 0;
 }
 
 function resolveTypeConfig(
@@ -78,6 +117,18 @@ function resolveTypeConfig(
   return { pointsPerSale: 0, expectedConversionRate: 0 };
 }
 
+function countDistinctContactEntryDates(dailyEntries: DailyContactEntryRow[]): number {
+  const dates = new Set<string>();
+
+  dailyEntries.forEach((row) => {
+    if (Number(row.contacts_count) > 0) {
+      dates.add(row.entry_date);
+    }
+  });
+
+  return dates.size;
+}
+
 export function calculateConsultantPerformance(
   month: ConsultantMonthRow,
   baselines: MonthlyContactBaselineRow[],
@@ -85,6 +136,8 @@ export function calculateConsultantPerformance(
   adjustments: ManualContactAdjustmentRow[],
   contactTypes: ContactTypeRow[]
 ): ConsultantPerformanceStats {
+  const uniqueBaselines = dedupeBaselineRowsByContactType(baselines);
+
   const totalsByType = new Map<
     string,
     { contacts: number; convertedSales: number; totalGwp: number }
@@ -104,7 +157,7 @@ export function calculateConsultantPerformance(
     });
   };
 
-  baselines.forEach((row) => {
+  uniqueBaselines.forEach((row) => {
     addToType(
       row.contact_type_key,
       Number(row.total_contacts_so_far),
@@ -150,7 +203,7 @@ export function calculateConsultantPerformance(
   const mtdTargetConversion = eligibleContacts > 0 ? blendedNumerator / eligibleContacts : 0;
   const percentToTargetConversion =
     mtdTargetConversion > 0 ? mtdConversionRate / mtdTargetConversion : 0;
-  const mtdConversionMultiplier = conversionMultiplier(percentToTargetConversion);
+  const conversionMultiplier = getConversionMultiplier(percentToTargetConversion);
   const averageGwp = mtdSales > 0 ? mtdTotalGwp / mtdSales : 0;
 
   const pointsTarget =
@@ -159,27 +212,43 @@ export function calculateConsultantPerformance(
         Number(month.full_time_rostered_days)
       : 0;
 
-  const base = getDppForPoints(mtdTotalSalesPoints);
-  const gwpBonus = base > 0 ? gwpPayablePerPoint(averageGwp) : 0;
-  const mtdDpp = base + gwpBonus;
-  const mtdCommission = mtdTotalSalesPoints * mtdDpp * mtdConversionMultiplier;
+  const adjustedBrackets = getAdjustedCommissionBrackets(month);
+  const mtdDpp = getDppForPoints(mtdTotalSalesPoints, adjustedBrackets);
+  const gwpAcceleratorDpp = getGwpAcceleratorDpp(averageGwp);
+  const mtdBaseCommission = mtdTotalSalesPoints * mtdDpp * conversionMultiplier;
+  const mtdGwpAccelerator = mtdTotalSalesPoints * gwpAcceleratorDpp;
+  const mtdCommission = mtdBaseCommission + mtdGwpAccelerator;
 
   const completedDays = Number(month.completed_rostered_days_so_far);
   const totalRosteredDays = Number(month.total_rostered_days_this_month);
+  const distinctContactEntryDates = countDistinctContactEntryDates(dailyEntries);
+  const projectionDays =
+    completedDays > 0 ? completedDays : distinctContactEntryDates;
+
   const projectedTotalSalesPoints =
-    completedDays > 0 ? (mtdTotalSalesPoints / completedDays) * totalRosteredDays : 0;
-  const projectedBase = getDppForPoints(projectedTotalSalesPoints);
-  const projectedGwpBonus = projectedBase > 0 ? gwpPayablePerPoint(averageGwp) : 0;
-  const projectedDpp = projectedBase + projectedGwpBonus;
-  const projectedConversionMultiplier = conversionMultiplier(percentToTargetConversion);
+    projectionDays > 0
+      ? (mtdTotalSalesPoints / projectionDays) * totalRosteredDays
+      : 0;
+  const projectedDpp = getDppForPoints(projectedTotalSalesPoints, adjustedBrackets);
+  const projectedConversionMultiplier = getConversionMultiplier(percentToTargetConversion);
+  const projectedGwpAcceleratorDpp = getGwpAcceleratorDpp(averageGwp);
   const projectedCommission =
-    projectedTotalSalesPoints * projectedDpp * projectedConversionMultiplier;
+    projectedTotalSalesPoints * projectedDpp * projectedConversionMultiplier +
+    projectedTotalSalesPoints * projectedGwpAcceleratorDpp;
 
   console.log("MTD Sales Points:", mtdTotalSalesPoints);
-  console.log("Adjusted Points Target:", pointsTarget);
+  console.log("Adjusted Brackets:", adjustedBrackets);
   console.log("MTD DPP:", mtdDpp);
+  console.log("Average GWP:", averageGwp);
+  console.log("GWP Accelerator DPP:", gwpAcceleratorDpp);
+  console.log("Conversion Multiplier:", conversionMultiplier);
+  console.log("MTD Base Commission:", mtdBaseCommission);
+  console.log("MTD GWP Accelerator:", mtdGwpAccelerator);
+  console.log("MTD Commission:", mtdCommission);
+  console.log("Projection Days:", projectionDays);
   console.log("Projected Points:", projectedTotalSalesPoints);
   console.log("Projected DPP:", projectedDpp);
+  console.log("Projected Commission:", projectedCommission);
 
   return {
     consultantMonthId: month.id,
@@ -191,20 +260,22 @@ export function calculateConsultantPerformance(
     mtdConversionRate,
     mtdTargetConversion,
     percentToTargetConversion,
-    mtdConversionMultiplier,
+    mtdConversionMultiplier: conversionMultiplier,
     mtdTotalSalesPoints,
     pointsTarget,
     mtdTotalGwp,
     averageGwp,
-    baseDpp: base,
-    gwpPayablePerPoint: gwpBonus,
     mtdDpp,
+    gwpAcceleratorDpp,
+    mtdBaseCommission,
+    mtdGwpAccelerator,
     mtdCommission,
     completedRosteredDaysSoFar: completedDays,
     totalRosteredDaysThisMonth: totalRosteredDays,
+    projectionDays,
     projectedTotalSalesPoints,
     projectedDpp,
-    projectedGwpPayablePerPoint: projectedGwpBonus,
+    projectedGwpAcceleratorDpp,
     projectedConversionMultiplier,
     projectedCommission,
   };

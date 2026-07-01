@@ -1,3 +1,5 @@
+import { dedupeBaselineRowsByContactType } from "@/lib/manualInput/baselines";
+
 export type EmploymentTypeDb = "full_time" | "part_time";
 export type EmploymentTypeUi = "Full-time" | "Part-time";
 
@@ -84,12 +86,24 @@ export type MonthlyContactBaselineUpsert = {
   total_gwp_so_far: number;
 };
 
+export type ContactDispositionRow = {
+  disposition_key: string;
+  display_name: string;
+  counts_as_contact_by_default: boolean;
+  counts_as_sale: boolean;
+  counts_as_contact_for_cli_only: boolean;
+  requires_gwp: boolean;
+  sort_order: number;
+  created_at?: string;
+};
+
 export type DailyContactEntryRow = {
   id: string;
   consultant_month_id: string;
   user_id: string;
   entry_date: string;
   contact_type_key: string;
+  disposition_key: string;
   contacts_count: number;
   converted_sales_count: number;
   total_gwp: number;
@@ -98,16 +112,20 @@ export type DailyContactEntryRow = {
   updated_at?: string;
 };
 
-export type DailyContactEntryUpsert = {
+export type DailyContactEntryInsert = {
   consultant_month_id: string;
   user_id: string;
   entry_date: string;
   contact_type_key: string;
+  disposition_key: string;
   contacts_count: number;
   converted_sales_count: number;
   total_gwp: number;
   notes: string | null;
 };
+
+/** @deprecated Use DailyContactEntryInsert — daily contacts use insert-only for new rows. */
+export type DailyContactEntryUpsert = DailyContactEntryInsert;
 
 export type ManualContactAdjustmentRow = {
   id: string;
@@ -177,15 +195,17 @@ export type ConsultantPerformanceStats = {
   pointsTarget: number;
   mtdTotalGwp: number;
   averageGwp: number;
-  baseDpp: number;
-  gwpPayablePerPoint: number;
   mtdDpp: number;
+  gwpAcceleratorDpp: number;
+  mtdBaseCommission: number;
+  mtdGwpAccelerator: number;
   mtdCommission: number;
   completedRosteredDaysSoFar: number;
   totalRosteredDaysThisMonth: number;
+  projectionDays: number;
   projectedTotalSalesPoints: number;
   projectedDpp: number;
-  projectedGwpPayablePerPoint: number;
+  projectedGwpAcceleratorDpp: number;
   projectedConversionMultiplier: number;
   projectedCommission: number;
 };
@@ -208,7 +228,7 @@ export function rowToManualInputDefaults(
 ): ManualInputDefaultValues {
   const baselineByContactType: ManualInputDefaultValues["baselineByContactType"] = {};
 
-  baselineRows.forEach((row) => {
+  dedupeBaselineRowsByContactType(baselineRows).forEach((row) => {
     baselineByContactType[row.contact_type_key] = {
       totalContactsSoFar: Number(row.total_contacts_so_far),
       convertedSalesSoFar: Number(row.converted_sales_so_far),

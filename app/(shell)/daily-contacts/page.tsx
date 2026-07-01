@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import DashboardShell from "@/components/DashboardShell";
 import DailyContactsManager from "@/components/DailyContactsManager";
+import {
+  dispositionDisplayName,
+  fetchContactDispositions,
+  mapContactDispositionRows,
+} from "@/lib/dailyContacts/dispositions";
 import {
   contactTypeDisplayName,
   contactTypePointsPerSale,
@@ -21,13 +25,12 @@ export default async function DailyContactsPage() {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", user.id)
-    .single();
+  const [contactTypes, dispositionRows] = await Promise.all([
+    mapContactTypeRows(await fetchContactTypes(supabase)),
+    fetchContactDispositions(supabase).catch(() => []),
+  ]);
+  const dispositions = mapContactDispositionRows(dispositionRows);
 
-  const contactTypes = mapContactTypeRows(await fetchContactTypes(supabase));
   const { month, year } = getCurrentMonthYear();
   const { data: consultantMonth } = await supabase
     .from("consultant_months")
@@ -37,11 +40,9 @@ export default async function DailyContactsPage() {
     .eq("year", year)
     .maybeSingle();
 
-  const today = new Date().toISOString().slice(0, 10);
-
   if (!consultantMonth) {
     return (
-      <DashboardShell userName={profile?.full_name} activeItem="daily-contacts">
+      <>
         <div className="mb-8">
           <h2 className="text-3xl font-semibold text-[var(--foreground)]">Daily Contacts</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">Log daily contact entries from this page.</p>
@@ -57,7 +58,7 @@ export default async function DailyContactsPage() {
             Go to Manual Input
           </Link>
         </div>
-      </DashboardShell>
+      </>
     );
   }
 
@@ -77,6 +78,8 @@ export default async function DailyContactsPage() {
       createdAt: row.created_at,
       contactTypeKey: row.contact_type_key,
       contactTypeName: contactTypeDisplayName(contactTypes, row.contact_type_key),
+      dispositionKey: row.disposition_key,
+      dispositionName: dispositionDisplayName(dispositions, row.disposition_key),
       pointsPerSale,
       contactsCount: Number(row.contacts_count),
       convertedSalesCount,
@@ -86,15 +89,8 @@ export default async function DailyContactsPage() {
     };
   });
 
-  const todaysEntries = entries.filter((entry) => entry.entryDate === today);
-  const contactsLoggedToday = todaysEntries.reduce((sum, entry) => sum + entry.contactsCount, 0);
-  const convertedSalesToday = todaysEntries.reduce((sum, entry) => sum + entry.convertedSalesCount, 0);
-  const salesPointsToday = todaysEntries.reduce((sum, entry) => sum + entry.salesPoints, 0);
-  const totalGwpToday = todaysEntries.reduce((sum, entry) => sum + entry.totalGwp, 0);
-  const averageGwpToday = convertedSalesToday > 0 ? totalGwpToday / convertedSalesToday : 0;
-
   return (
-    <DashboardShell userName={profile?.full_name} activeItem="daily-contacts">
+    <>
       <div className="mb-8">
         <h2 className="text-3xl font-semibold text-[var(--foreground)]">Daily Contacts</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
@@ -105,13 +101,8 @@ export default async function DailyContactsPage() {
         consultantMonthId={consultantMonth.id}
         entries={entries}
         contactTypes={contactTypes}
-        todaySummary={{
-          contactsLoggedToday,
-          convertedSalesToday,
-          salesPointsToday,
-          averageGwpToday,
-        }}
+        dispositions={dispositions}
       />
-    </DashboardShell>
+    </>
   );
 }

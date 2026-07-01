@@ -45,12 +45,24 @@ create table if not exists public.monthly_contact_baselines (
   unique(consultant_month_id, contact_type_key)
 );
 
+create table if not exists public.contact_dispositions (
+  disposition_key text primary key,
+  display_name text not null,
+  counts_as_contact_by_default boolean not null default false,
+  counts_as_sale boolean not null default false,
+  counts_as_contact_for_cli_only boolean not null default false,
+  requires_gwp boolean not null default false,
+  sort_order integer not null default 0,
+  created_at timestamptz default now()
+);
+
 create table if not exists public.daily_contact_entries (
   id uuid primary key default gen_random_uuid(),
   consultant_month_id uuid references public.consultant_months(id) on delete cascade not null,
   user_id uuid references auth.users(id) on delete cascade not null,
   entry_date date not null,
   contact_type_key text references public.contact_types(type_key) not null,
+  disposition_key text references public.contact_dispositions(disposition_key) not null,
   contacts_count numeric not null default 0,
   converted_sales_count numeric not null default 0,
   total_gwp numeric not null default 0,
@@ -58,6 +70,9 @@ create table if not exists public.daily_contact_entries (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Individual contact entries: no unique on (consultant_month_id, entry_date, contact_type_key).
+-- Multiple rows per date/type are allowed; daily_contact_entries.id is the row identifier.
 
 create table if not exists public.manual_contact_adjustments (
   id uuid primary key default gen_random_uuid(),
@@ -76,6 +91,7 @@ create table if not exists public.manual_contact_adjustments (
 alter table public.profiles enable row level security;
 alter table public.consultant_months enable row level security;
 alter table public.contact_types enable row level security;
+alter table public.contact_dispositions enable row level security;
 alter table public.monthly_contact_baselines enable row level security;
 alter table public.daily_contact_entries enable row level security;
 alter table public.manual_contact_adjustments enable row level security;
@@ -103,6 +119,9 @@ create policy "Users can delete their own consultant months"
 
 create policy "Contact types are readable by authenticated users"
   on public.contact_types for select using (true);
+
+create policy "Contact dispositions are readable by authenticated users"
+  on public.contact_dispositions for select using (true);
 
 create policy "Baselines are readable by authenticated users"
   on public.monthly_contact_baselines for select using (true);
@@ -140,6 +159,33 @@ set
   display_name = excluded.display_name,
   points_per_sale = excluded.points_per_sale,
   expected_conversion_rate = excluded.expected_conversion_rate,
+  sort_order = excluded.sort_order;
+
+insert into public.contact_dispositions (
+  disposition_key,
+  display_name,
+  counts_as_contact_by_default,
+  counts_as_sale,
+  counts_as_contact_for_cli_only,
+  requires_gwp,
+  sort_order
+)
+values
+  ('converted_to_sale', 'Converted to sale', true, true, false, true, 1),
+  ('quote_no_sale', 'Quote no sale', true, false, false, false, 2),
+  ('crq', 'CRQ', true, false, false, false, 3),
+  ('quote_cant_beat', 'Quote - can''t beat', true, false, false, false, 4),
+  ('no_answer', 'No answer', false, false, true, false, 5),
+  ('disgruntled', 'Disgruntled', false, false, true, false, 6),
+  ('wrong_number', 'Wrong number', false, false, true, false, 7),
+  ('message_bank', 'Message bank', false, false, true, false, 8)
+on conflict (disposition_key) do update
+set
+  display_name = excluded.display_name,
+  counts_as_contact_by_default = excluded.counts_as_contact_by_default,
+  counts_as_sale = excluded.counts_as_sale,
+  counts_as_contact_for_cli_only = excluded.counts_as_contact_for_cli_only,
+  requires_gwp = excluded.requires_gwp,
   sort_order = excluded.sort_order;
 
 create or replace function public.handle_new_user()

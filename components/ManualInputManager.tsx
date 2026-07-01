@@ -76,8 +76,13 @@ export default function ManualInputManager({
   const [baselineRows, setBaselineRows] = useState(() => buildBaselineRows(defaultValues, contactTypes));
   const [adjustmentRows, setAdjustmentRows] = useState(() => buildEmptyAdjustmentRows(contactTypes));
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    void submitManualInput(formData);
+  }
+
+  async function submitManualInput(formData: FormData) {
     setPending(true);
     setFormState({});
 
@@ -87,7 +92,7 @@ export default function ManualInputManager({
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        body: new FormData(event.currentTarget),
+        body: formData,
         headers: { Accept: "application/json" },
       });
 
@@ -124,6 +129,7 @@ export default function ManualInputManager({
 
       console.log("Baseline saved successfully");
       console.log("Navigating to dashboard without hard reload");
+      router.refresh();
       router.push("/dashboard");
     } catch {
       setFormState({ error: "Failed to save. Please try again." });

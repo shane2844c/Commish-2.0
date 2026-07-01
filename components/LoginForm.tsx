@@ -15,8 +15,13 @@ export default function LoginForm() {
 
   const isSignup = mode === "signup";
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    void submitAuth(formData);
+  }
+
+  async function submitAuth(formData: FormData) {
     setPending(true);
     setState({});
 
@@ -25,7 +30,7 @@ export default function LoginForm() {
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        body: new FormData(event.currentTarget),
+        body: formData,
       });
       const result = (await response.json()) as AuthFormState & {
         success?: boolean;

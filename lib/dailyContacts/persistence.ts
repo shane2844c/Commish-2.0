@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { calculateCounts } from "@/lib/dailyContacts/counts";
 import { assertValidContactTypeKey } from "@/lib/contactTypes/keys";
-import type { DailyContactEntryUpsert, PerformanceActionState } from "@/lib/types";
+import type { DailyContactEntryInsert, PerformanceActionState } from "@/lib/types";
 import { ensureParentUserRows, requireAuthenticatedUser } from "@/lib/supabase/ensureParentUser";
 import { logSupabasePayload, logSupabaseError } from "@/lib/supabase/logPayload";
 
@@ -30,14 +31,13 @@ export async function persistDailyContact(
   const consultantMonthId = String(formData.get("consultantMonthId") ?? "");
   const entryDate = String(formData.get("entryDate") ?? "");
   const contactTypeKey = String(formData.get("contactTypeKey") ?? "");
-  const contactsCount = parseNumber(formData.get("contactsCount"), 0);
-  const convertedSalesCount = parseNumber(formData.get("convertedSalesCount"), 0);
-  const totalGwp = parseNumber(formData.get("totalGwp"), 0);
+  const dispositionKey = String(formData.get("dispositionKey") ?? "").trim();
+  const totalGwpInput = parseNumber(formData.get("totalGwp"), 0);
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const editEntryId = String(formData.get("editEntryId") ?? "").trim();
 
-  if (!consultantMonthId || !entryDate || !contactTypeKey) {
-    return { error: "Date and contact type are required.", status: 400 };
+  if (!consultantMonthId || !entryDate || !contactTypeKey || !dispositionKey) {
+    return { error: "Date, contact type, and disposition are required.", status: 400 };
   }
 
   try {
@@ -49,8 +49,18 @@ export async function persistDailyContact(
     };
   }
 
-  if (contactsCount < 0 || convertedSalesCount < 0 || totalGwp < 0) {
-    return { error: "Values cannot be negative.", status: 400 };
+  const { data: dispositionRow } = await supabase
+    .from("contact_dispositions")
+    .select("disposition_key")
+    .eq("disposition_key", dispositionKey)
+    .maybeSingle();
+
+  if (!dispositionRow) {
+    return { error: `Invalid disposition_key: "${dispositionKey}"`, status: 400 };
+  }
+
+  if (dispositionKey === "converted_to_sale" && totalGwpInput < 0) {
+    return { error: "Total GWP cannot be negative.", status: 400 };
   }
 
   const { data: month } = await supabase
@@ -64,14 +74,17 @@ export async function persistDailyContact(
     return { error: "Consultant month not found.", status: 400 };
   }
 
-  const payload: DailyContactEntryUpsert = {
+  const { contacts_count, converted_sales_count } = calculateCounts(contactTypeKey, dispositionKey);
+
+  const payload: DailyContactEntryInsert = {
     consultant_month_id: consultantMonthId,
     user_id: user.id,
     entry_date: entryDate,
     contact_type_key: contactTypeKey,
-    contacts_count: contactsCount,
-    converted_sales_count: convertedSalesCount,
-    total_gwp: totalGwp,
+    disposition_key: dispositionKey,
+    contacts_count,
+    converted_sales_count,
+    total_gwp: dispositionKey === "converted_to_sale" ? Number(totalGwpInput || 0) : 0,
     notes,
   };
 
@@ -87,7 +100,7 @@ export async function persistDailyContact(
       return { error: "Daily contact entry not found.", status: 400 };
     }
 
-    logSupabasePayload("daily_contact_entries", payload);
+    logSupabasePayload("daily_contact_entries (update by id)", payload);
 
     const { error } = await supabase
       .from("daily_contact_entries")
@@ -102,11 +115,19 @@ export async function persistDailyContact(
 
     console.log("[supabase] daily_contact_entries update success:", editEntryId);
   } else {
+    console.log("Inserting new daily contact entry:", payload);
     logSupabasePayload("daily_contact_entries", payload);
 
     const { error } = await supabase.from("daily_contact_entries").insert(payload);
     if (error) {
       logSupabaseError("daily_contact_entries", error);
+      if (error.message.includes("daily_contact_entries_month_date_type_unique")) {
+        return {
+          error:
+            "Database still has an old unique constraint on date + contact type. Run supabase/migrations/drop_daily_contact_entries_unique.sql in Supabase SQL Editor.",
+          status: 400,
+        };
+      }
       return { error: error.message, status: 400 };
     }
 

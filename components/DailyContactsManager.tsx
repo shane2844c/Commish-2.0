@@ -1,9 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  calculateDailyConversionPerformance,
+  logDailyConversionPerformance,
+} from "@/lib/dailyContacts/dailyConversion";
+import type { ContactDispositionOption } from "@/lib/dailyContacts/dispositions";
 import type { ContactTypeOption } from "@/lib/contactTypes/helpers";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, formatPercent } from "@/lib/calculations";
 import type { PerformanceActionState } from "@/lib/types";
 
 type DailyContactEntry = {
@@ -12,6 +17,8 @@ type DailyContactEntry = {
   createdAt: string;
   contactTypeKey: string;
   contactTypeName: string;
+  dispositionKey: string;
+  dispositionName: string;
   pointsPerSale: number;
   contactsCount: number;
   convertedSalesCount: number;
@@ -24,37 +31,89 @@ type DailyContactsManagerProps = {
   consultantMonthId: string;
   entries: DailyContactEntry[];
   contactTypes: ContactTypeOption[];
-  todaySummary: {
-    contactsLoggedToday: number;
-    convertedSalesToday: number;
-    salesPointsToday: number;
-    averageGwpToday: number;
-  };
+  dispositions: ContactDispositionOption[];
 };
 
 export default function DailyContactsManager({
   consultantMonthId,
   entries,
   contactTypes,
-  todaySummary,
+  dispositions,
 }: DailyContactsManagerProps) {
   const router = useRouter();
   const today = new Date().toISOString().slice(0, 10);
+  const defaultDispositionKey = dispositions[0]?.disposition_key ?? "quote_no_sale";
+
   const [saveState, setSaveState] = useState<PerformanceActionState>({});
   const [deleteState, setDeleteState] = useState<PerformanceActionState>({});
   const [savePending, setSavePending] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [editEntry, setEditEntry] = useState<DailyContactEntry | null>(null);
 
-  async function handleSave(event: FormEvent<HTMLFormElement>) {
+  const [entryDate, setEntryDate] = useState(today);
+  const [contactTypeKey, setContactTypeKey] = useState("outbound");
+  const [dispositionKey, setDispositionKey] = useState(defaultDispositionKey);
+  const [totalGwp, setTotalGwp] = useState(0);
+  const [notes, setNotes] = useState("");
+
+  const requiresGwp = dispositionKey === "converted_to_sale";
+
+  const dailyPerformance = useMemo(
+    () => calculateDailyConversionPerformance(entries, contactTypes, entryDate),
+    [entries, contactTypes, entryDate]
+  );
+
+  useEffect(() => {
+    logDailyConversionPerformance(dailyPerformance);
+  }, [dailyPerformance]);
+
+  useEffect(() => {
+    if (editEntry) {
+      setEntryDate(editEntry.entryDate);
+      setContactTypeKey(editEntry.contactTypeKey);
+      setDispositionKey(editEntry.dispositionKey);
+      setTotalGwp(editEntry.totalGwp);
+      setNotes(editEntry.notes ?? "");
+    }
+  }, [editEntry]);
+
+  function handleDispositionChange(nextDispositionKey: string) {
+    setDispositionKey(nextDispositionKey);
+    if (nextDispositionKey !== "converted_to_sale") {
+      setTotalGwp(0);
+    }
+  }
+
+  function resetFormAfterSave() {
+    setEditEntry(null);
+    setDispositionKey(defaultDispositionKey);
+    setTotalGwp(0);
+    setNotes("");
+  }
+
+  function cancelEdit() {
+    setEditEntry(null);
+    setEntryDate(today);
+    setContactTypeKey("outbound");
+    setDispositionKey(defaultDispositionKey);
+    setTotalGwp(0);
+    setNotes("");
+  }
+
+  function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    void submitSave(formData);
+  }
+
+  async function submitSave(formData: FormData) {
     setSavePending(true);
     setSaveState({});
 
     try {
       const response = await fetch("/api/daily-contacts", {
         method: "POST",
-        body: new FormData(event.currentTarget),
+        body: formData,
       });
 
       if (response.status === 401) {
@@ -62,11 +121,18 @@ export default function DailyContactsManager({
         return;
       }
 
-      const result = (await response.json()) as PerformanceActionState;
+      let result: PerformanceActionState;
+      try {
+        result = (await response.json()) as PerformanceActionState;
+      } catch {
+        setSaveState({ error: "Invalid server response. Please try again." });
+        return;
+      }
+
       setSaveState(result);
 
       if (response.ok && result.success) {
-        setEditEntry(null);
+        resetFormAfterSave();
         router.refresh();
       }
     } catch {
@@ -108,17 +174,38 @@ export default function DailyContactsManager({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard label="Contacts logged today" value={todaySummary.contactsLoggedToday.toString()} />
-        <SummaryCard label="Converted sales today" value={todaySummary.convertedSalesToday.toString()} />
-        <SummaryCard label="Sales points today" value={formatCurrency(todaySummary.salesPointsToday)} />
-        <SummaryCard label="Average GWP today" value={formatCurrency(todaySummary.averageGwpToday)} />
+      <div>
+        <p className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
+          Daily performance for {entryDate}
+        </p>
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          Separate from Dashboard MTD metrics. Updates when the form date changes or entries are saved.
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <SummaryCard label="Contacts Logged Today" value={dailyPerformance.dailyContacts.toString()} />
+        <SummaryCard label="Converted Sales Today" value={dailyPerformance.dailyConvertedSales.toString()} />
+        <SummaryCard label="Sales Points Today" value={formatCurrency(dailyPerformance.salesPointsToday)} />
+        <SummaryCard label="Average GWP Today" value={formatCurrency(dailyPerformance.averageGwpToday)} />
+        <SummaryCard
+          label="Daily Actual Conversion"
+          value={formatPercent(dailyPerformance.dailyActualConversion)}
+        />
+        <SummaryCard
+          label="Daily Target Conversion"
+          value={formatPercent(dailyPerformance.dailyTargetConversion)}
+        />
+        <SummaryCard
+          label="Daily % To Target Conversion"
+          value={formatPercent(dailyPerformance.dailyPercentToTargetConversion)}
+          highlight
+        />
       </div>
 
       <div className="rounded-xl border border-[var(--border)] bg-white p-6 shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
         <h3 className="text-xl font-semibold text-[var(--foreground)]">Add Contact Entry</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Save raw counts and GWP only. Dashboard metrics are calculated after fetch.
+          Each submission logs one entry. Contact and sale counts are calculated from the disposition.
         </p>
 
         {(saveState.error || deleteState.error) && (
@@ -142,7 +229,8 @@ export default function DailyContactsManager({
               <input
                 name="entryDate"
                 type="date"
-                defaultValue={editEntry?.entryDate ?? today}
+                value={entryDate}
+                onChange={(e) => setEntryDate(e.target.value)}
                 className={inputClass}
                 required
               />
@@ -151,7 +239,8 @@ export default function DailyContactsManager({
             <FormField label="Contact type">
               <select
                 name="contactTypeKey"
-                defaultValue={editEntry?.contactTypeKey ?? "outbound"}
+                value={contactTypeKey}
+                onChange={(e) => setContactTypeKey(e.target.value)}
                 className={inputClass}
                 required
               >
@@ -163,28 +252,24 @@ export default function DailyContactsManager({
               </select>
             </FormField>
 
-            <FormField label="Contacts count">
-              <input
-                name="contactsCount"
-                type="number"
-                step="1"
-                min="0"
-                defaultValue={editEntry?.contactsCount ?? 0}
+            <FormField label="Disposition">
+              <select
+                name="dispositionKey"
+                value={dispositionKey}
+                onChange={(e) => handleDispositionChange(e.target.value)}
                 className={inputClass}
                 required
-              />
-            </FormField>
-
-            <FormField label="Converted sales count">
-              <input
-                name="convertedSalesCount"
-                type="number"
-                step="1"
-                min="0"
-                defaultValue={editEntry?.convertedSalesCount ?? 0}
-                className={inputClass}
-                required
-              />
+              >
+                {dispositions.map((item) => (
+                  <option key={item.disposition_key} value={item.disposition_key}>
+                    {item.display_name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs font-normal text-[var(--muted)]">
+                No answer, disgruntled, wrong number, and message bank only count as contacts for CLI
+                contact types.
+              </p>
             </FormField>
 
             <FormField label="Total GWP">
@@ -193,9 +278,11 @@ export default function DailyContactsManager({
                 type="number"
                 step="0.01"
                 min="0"
-                defaultValue={editEntry?.totalGwp ?? 0}
-                className={inputClass}
-                required
+                value={requiresGwp ? totalGwp : 0}
+                onChange={(e) => setTotalGwp(Number(e.target.value || 0))}
+                disabled={!requiresGwp}
+                required={requiresGwp}
+                className={`${inputClass} disabled:cursor-not-allowed disabled:bg-[#f3f6fb] disabled:text-[var(--muted)]`}
               />
             </FormField>
 
@@ -203,7 +290,8 @@ export default function DailyContactsManager({
               <input
                 name="notes"
                 type="text"
-                defaultValue={editEntry?.notes ?? ""}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
                 className={inputClass}
               />
             </FormField>
@@ -220,7 +308,7 @@ export default function DailyContactsManager({
             {editEntry && (
               <button
                 type="button"
-                onClick={() => setEditEntry(null)}
+                onClick={cancelEdit}
                 className="rounded-lg border border-[var(--brand)] px-4 py-2 text-sm font-medium text-[var(--brand)] hover:bg-[var(--brand-soft)]"
               >
                 Cancel edit
@@ -240,8 +328,7 @@ export default function DailyContactsManager({
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Contact type</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Contacts</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Converted</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Disposition</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Points</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Total GWP</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">Actions</th>
@@ -250,7 +337,7 @@ export default function DailyContactsManager({
             <tbody className="divide-y divide-[var(--border)]">
               {entries.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--muted)]">
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--muted)]">
                     No contacts logged yet.
                   </td>
                 </tr>
@@ -259,8 +346,7 @@ export default function DailyContactsManager({
                   <tr key={entry.id} className="hover:bg-[#f8fbff]">
                     <td className="whitespace-nowrap px-4 py-3 text-sm">{entry.entryDate}</td>
                     <td className="px-4 py-3 text-sm">{entry.contactTypeName}</td>
-                    <td className="px-4 py-3 text-right text-sm">{entry.contactsCount}</td>
-                    <td className="px-4 py-3 text-right text-sm">{entry.convertedSalesCount}</td>
+                    <td className="px-4 py-3 text-sm">{entry.dispositionName}</td>
                     <td className="px-4 py-3 text-right text-sm">{formatCurrency(entry.salesPoints)}</td>
                     <td className="px-4 py-3 text-right text-sm">{formatCurrency(entry.totalGwp)}</td>
                     <td className="px-4 py-3">
@@ -293,9 +379,21 @@ export default function DailyContactsManager({
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-white p-4">
+    <div
+      className={`rounded-lg border bg-white p-4 ${
+        highlight ? "border-blue-200 bg-[#f7fbff]" : "border-[var(--border)]"
+      }`}
+    >
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</p>
       <p className="mt-2 text-xl font-semibold text-[var(--foreground)]">{value}</p>
     </div>
