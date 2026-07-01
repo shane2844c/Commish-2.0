@@ -4,8 +4,11 @@ import {
   contactTypePointsPerSale,
   mapContactTypeRows,
 } from "@/lib/contactTypes/helpers";
+import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
+import { mapRosteredDayOffRows } from "@/lib/monthlyKpi/rosteredDaysOff";
 import { fetchContactTypes } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import {
   getCurrentMonthYear,
   rowToManualInputDefaults,
@@ -22,13 +25,25 @@ export default async function SetupPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  if (!user) {
+    redirect("/login");
+  }
+
   const contactTypes = mapContactTypeRows(await fetchContactTypes(supabase));
   const { month, year } = getCurrentMonthYear();
+
+  const defaultKpis = calculateMonthlyKpis({
+    month,
+    year,
+    employmentType: "Full-time",
+    fullTimePointsTarget: 0,
+    offDates: [],
+  });
 
   const { data: existingSetup } = await supabase
     .from("consultant_months")
     .select("*")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .eq("month", month)
     .eq("year", year)
     .maybeSingle();
@@ -38,9 +53,12 @@ export default async function SetupPage() {
     year,
     employmentType: "Full-time",
     fullTimePointsTarget: 0,
-    fullTimeRosteredDays: 0,
-    totalRosteredDaysThisMonth: 0,
-    completedRosteredDaysSoFar: 0,
+    rosteredDaysOffEntries: [],
+    fullTimeRosteredDays: defaultKpis.fullTimeRosteredDays,
+    baseRosteredDaysThisMonth: defaultKpis.baseRosteredDaysThisMonth,
+    totalRosteredDaysThisMonth: defaultKpis.totalRosteredDaysThisMonth,
+    adjustedPointsTarget: defaultKpis.adjustedPointsTarget,
+    completedRosteredDaysSoFar: defaultKpis.completedRosteredDaysSoFar,
     baselineByContactType: {},
   };
 
@@ -48,24 +66,34 @@ export default async function SetupPage() {
   let adjustmentHistory: AdjustmentHistoryRow[] = [];
 
   if (existingSetup) {
-    const [{ data: baselineRows }, { data: adjustmentRows }] = await Promise.all([
+    const [{ data: baselineRows }, { data: adjustmentRows }, { data: rosteredOffRows }] =
+      await Promise.all([
       supabase
         .from("monthly_contact_baselines")
         .select("*")
         .eq("consultant_month_id", existingSetup.id)
-        .eq("user_id", user!.id)
+        .eq("user_id", user.id)
         .order("created_at", { ascending: true }),
       supabase
         .from("manual_contact_adjustments")
         .select("*")
         .eq("consultant_month_id", existingSetup.id)
-        .eq("user_id", user!.id)
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("consultant_rostered_days_off")
+        .select("*")
+        .eq("consultant_month_id", existingSetup.id)
+        .eq("user_id", user.id)
+        .order("off_date", { ascending: true }),
     ]);
+
+    const rosteredDaysOffEntries = mapRosteredDayOffRows(rosteredOffRows ?? []);
 
     manualDefaults = rowToManualInputDefaults(
       existingSetup as ConsultantMonthRow,
-      (baselineRows ?? []) as MonthlyContactBaselineRow[]
+      (baselineRows ?? []) as MonthlyContactBaselineRow[],
+      rosteredDaysOffEntries
     );
 
     adjustmentHistory = ((adjustmentRows ?? []) as ManualContactAdjustmentRow[]).map((row) => ({

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertValidContactTypeKey } from "@/lib/contactTypes/keys";
-import { dedupeBaselineRowsByContactType } from "@/lib/manualInput/baselines";
+import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
+import { fetchRosteredDaysOff } from "@/lib/monthlyKpi/rosteredDaysOff";
 import type {
   ConsultantMonthUpsert,
   ContactTypeRow,
@@ -8,9 +9,10 @@ import type {
   MonthlyContactBaselineUpsert,
   PerformanceActionState,
 } from "@/lib/types";
-import { employmentTypeToDb, totalGwpFromAverage } from "@/lib/types";
+import { employmentTypeFromDb, employmentTypeToDb, totalGwpFromAverage } from "@/lib/types";
 import { ensureParentUserRows, requireAuthenticatedUser } from "@/lib/supabase/ensureParentUser";
 import { logSupabasePayload, logSupabaseError } from "@/lib/supabase/logPayload";
+import { upsertConsultantMonthRecord } from "@/lib/manualInput/consultantMonthUpsert";
 
 function parseNumber(value: FormDataEntryValue | null, fallback = 0): number {
   if (value === null || value === "") {
@@ -38,24 +40,39 @@ async function upsertConsultantMonth(
   supabase: SupabaseClient,
   userId: string,
   formData: FormData
-): Promise<{ monthRow: { id: string } | null; error?: string }> {
+): Promise<{
+  monthRow: { id: string } | null;
+  consultantMonthPayload?: ConsultantMonthUpsert;
+  error?: string;
+}> {
   const month = parseNumber(formData.get("month"));
   const year = parseNumber(formData.get("year"));
   const employmentTypeForDb = employmentTypeToDb(String(formData.get("employmentType") ?? "Full-time"));
   const fullTimePointsTarget = parseNumber(formData.get("fullTimePointsTarget"));
-  const fullTimeRosteredDays = parseNumber(formData.get("fullTimeRosteredDays"));
-  const totalRosteredDaysThisMonth = parseNumber(formData.get("totalRosteredDaysThisMonth"));
-  const completedRosteredDaysSoFar = parseNumber(formData.get("completedRosteredDaysSoFar"));
 
-  if (
-    !month ||
-    !year ||
-    !fullTimePointsTarget ||
-    !fullTimeRosteredDays ||
-    !totalRosteredDaysThisMonth
-  ) {
-    return { monthRow: null, error: "Month setup fields are required." };
+  if (!month || !year || !fullTimePointsTarget) {
+    return { monthRow: null, error: "Month, year, and full-time points target are required." };
   }
+
+  const { data: existingMonth } = await supabase
+    .from("consultant_months")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("month", month)
+    .eq("year", year)
+    .maybeSingle();
+
+  const offDates = existingMonth?.id
+    ? await fetchRosteredDaysOff(supabase, existingMonth.id)
+    : [];
+
+  const kpis = calculateMonthlyKpis({
+    month,
+    year,
+    employmentType: employmentTypeFromDb(employmentTypeForDb),
+    fullTimePointsTarget,
+    offDates,
+  });
 
   const consultantMonthPayload: ConsultantMonthUpsert = {
     user_id: userId,
@@ -63,26 +80,77 @@ async function upsertConsultantMonth(
     year,
     employment_type: employmentTypeForDb,
     full_time_points_target: fullTimePointsTarget,
-    full_time_rostered_days: fullTimeRosteredDays,
-    total_rostered_days_this_month: totalRosteredDaysThisMonth,
-    completed_rostered_days_so_far: completedRosteredDaysSoFar,
+    full_time_rostered_days: kpis.fullTimeRosteredDays,
+    base_rostered_days_this_month: kpis.baseRosteredDaysThisMonth,
+    rostered_days_off: kpis.rosteredDaysOff,
+    total_rostered_days_this_month: kpis.totalRosteredDaysThisMonth,
+    adjusted_points_target: kpis.adjustedPointsTarget,
+    completed_rostered_days_so_far: kpis.completedRosteredDaysSoFar,
   };
 
+  console.log("Overwriting consultant month:", consultantMonthPayload);
   logSupabasePayload("consultant_months", consultantMonthPayload);
 
-  const { data: monthRow, error: monthError } = await supabase
-    .from("consultant_months")
-    .upsert(consultantMonthPayload, { onConflict: "user_id,month,year" })
-    .select("id")
-    .single();
+  const { data: monthRow, error: monthError } = await upsertConsultantMonthRecord(
+    supabase,
+    consultantMonthPayload
+  );
 
-  if (monthError) {
-    logSupabaseError("consultant_months", monthError);
-    return { monthRow: null, error: monthError.message };
+  if (monthError || !monthRow) {
+    return { monthRow: null, error: monthError?.message ?? "Failed to save consultant month." };
   }
 
   console.log("[supabase] consultant_months save success:", monthRow);
-  return { monthRow };
+  return { monthRow, consultantMonthPayload };
+}
+
+async function resetMonthPerformanceData(
+  supabase: SupabaseClient,
+  consultantMonthId: string,
+  userId: string
+): Promise<{ error?: string }> {
+  console.log("Resetting month data for consultant_month_id:", consultantMonthId);
+
+  const { error: dailyError } = await supabase
+    .from("daily_contact_entries")
+    .delete()
+    .eq("consultant_month_id", consultantMonthId)
+    .eq("user_id", userId);
+
+  if (dailyError) {
+    logSupabaseError("daily_contact_entries (reset)", dailyError);
+    return { error: dailyError.message };
+  }
+
+  console.log("Deleted old daily contacts");
+
+  const { error: adjustmentsError } = await supabase
+    .from("manual_contact_adjustments")
+    .delete()
+    .eq("consultant_month_id", consultantMonthId)
+    .eq("user_id", userId);
+
+  if (adjustmentsError) {
+    logSupabaseError("manual_contact_adjustments (reset)", adjustmentsError);
+    return { error: adjustmentsError.message };
+  }
+
+  console.log("Deleted old manual adjustments");
+
+  const { error: baselinesError } = await supabase
+    .from("monthly_contact_baselines")
+    .delete()
+    .eq("consultant_month_id", consultantMonthId)
+    .eq("user_id", userId);
+
+  if (baselinesError) {
+    logSupabaseError("monthly_contact_baselines (reset)", baselinesError);
+    return { error: baselinesError.message };
+  }
+
+  console.log("Deleted old monthly baselines");
+
+  return {};
 }
 
 export async function persistManualBaseline(
@@ -100,7 +168,11 @@ export async function persistManualBaseline(
     return { error: parentResult.error, status: 400 };
   }
 
-  const { monthRow, error: monthError } = await upsertConsultantMonth(supabase, user.id, formData);
+  const { monthRow, consultantMonthPayload, error: monthError } = await upsertConsultantMonth(
+    supabase,
+    user.id,
+    formData
+  );
   if (monthError || !monthRow) {
     return { error: monthError ?? "Failed to save consultant month.", status: 400 };
   }
@@ -146,54 +218,26 @@ export async function persistManualBaseline(
       total_gwp_so_far: Number(convertedSalesSoFar || 0) * Number(averageGwp || 0),
     };
 
-    console.log("Overwriting monthly baseline payload:", baselinePayload);
-    logSupabasePayload("monthly_contact_baselines", baselinePayload);
     baselinePayloads.push(baselinePayload);
   }
 
-  const { data: existingRows } = await supabase
-    .from("monthly_contact_baselines")
-    .select("id, contact_type_key, created_at, updated_at")
-    .eq("consultant_month_id", monthRow.id)
-    .eq("user_id", user.id);
-
-  if (existingRows && existingRows.length > 0) {
-    const keptIds = new Set(
-      dedupeBaselineRowsByContactType(existingRows).map((row) => row.id)
-    );
-    const duplicateIds = existingRows
-      .filter((row) => !keptIds.has(row.id))
-      .map((row) => row.id);
-
-    if (duplicateIds.length > 0) {
-      const { error: cleanupError } = await supabase
-        .from("monthly_contact_baselines")
-        .delete()
-        .in("id", duplicateIds)
-        .eq("user_id", user.id);
-
-      if (cleanupError) {
-        logSupabaseError("monthly_contact_baselines (duplicate cleanup)", cleanupError);
-        return { error: cleanupError.message, status: 400 };
-      }
-
-      console.log(
-        "[supabase] removed duplicate monthly_contact_baselines rows:",
-        duplicateIds.length
-      );
-    }
+  const resetResult = await resetMonthPerformanceData(supabase, monthRow.id, user.id);
+  if (resetResult.error) {
+    return { error: resetResult.error, status: 400 };
   }
 
-  const { error } = await supabase.from("monthly_contact_baselines").upsert(baselinePayloads, {
-    onConflict: "consultant_month_id,contact_type_key",
-  });
+  for (const baselinePayload of baselinePayloads) {
+    console.log("Saving new manual baseline:", baselinePayload);
+  }
+
+  const { error } = await supabase.from("monthly_contact_baselines").insert(baselinePayloads);
 
   if (error) {
     logSupabaseError("monthly_contact_baselines", error);
     return { error: error.message, status: 400 };
   }
 
-  console.log("[supabase] monthly_contact_baselines overwrite success:", baselinePayloads.length, "rows");
+  console.log("[supabase] monthly_contact_baselines save success:", baselinePayloads.length, "rows");
 
   return { success: true, message: "Baseline saved." };
 }

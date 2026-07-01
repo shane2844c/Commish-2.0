@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { ContactTypeOption } from "@/lib/contactTypes/helpers";
 import { formatCurrency, formatPercent } from "@/lib/calculations";
+import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
 import { averageGwpFromTotals } from "@/lib/types";
-import type { AdjustmentHistoryRow, EmploymentTypeUi, ManualInputDefaultValues, PerformanceActionState } from "@/lib/types";
+import type { AdjustmentHistoryRow, EmploymentTypeUi, ManualInputDefaultValues, PerformanceActionState, RosteredDayOffEntry } from "@/lib/types";
 
 type ManualInputManagerProps = {
   consultantMonthId?: string;
@@ -45,6 +46,19 @@ function buildBaselineRows(
   return rows;
 }
 
+function monthDateBounds(month: number, year: number) {
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    min: `${year}-${String(month).padStart(2, "0")}-01`,
+    max: `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+function formatOffDate(offDate: string) {
+  const [year, month, day] = offDate.split("-");
+  return `${day}/${month}/${year}`;
+}
+
 function buildEmptyAdjustmentRows(contactTypes: ContactTypeOption[]): Record<string, AdjustmentRowInput> {
   const rows: Record<string, AdjustmentRowInput> = {};
   contactTypes.forEach((type) => {
@@ -63,23 +77,177 @@ export default function ManualInputManager({
   const [mode, setMode] = useState<Mode>("baseline");
   const [formState, setFormState] = useState<PerformanceActionState>({});
   const [pending, setPending] = useState(false);
+  const [rosterPending, setRosterPending] = useState(false);
+  const [rosterState, setRosterState] = useState<PerformanceActionState>({});
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const pendingBaselineFormRef = useRef<FormData | null>(null);
 
   const [monthConfig, setMonthConfig] = useState({
     month: defaultValues.month,
     year: defaultValues.year,
     employmentType: defaultValues.employmentType,
     fullTimePointsTarget: defaultValues.fullTimePointsTarget,
-    fullTimeRosteredDays: defaultValues.fullTimeRosteredDays,
-    totalRosteredDaysThisMonth: defaultValues.totalRosteredDaysThisMonth,
-    completedRosteredDaysSoFar: defaultValues.completedRosteredDaysSoFar,
   });
+  const [rosteredDaysOffEntries, setRosteredDaysOffEntries] = useState<RosteredDayOffEntry[]>(
+    defaultValues.rosteredDaysOffEntries
+  );
+  const [newOffDate, setNewOffDate] = useState("");
+  const [newOffReason, setNewOffReason] = useState("");
   const [baselineRows, setBaselineRows] = useState(() => buildBaselineRows(defaultValues, contactTypes));
   const [adjustmentRows, setAdjustmentRows] = useState(() => buildEmptyAdjustmentRows(contactTypes));
+
+  const previewOffDates = useMemo(() => {
+    if (
+      monthConfig.month === defaultValues.month &&
+      monthConfig.year === defaultValues.year
+    ) {
+      return rosteredDaysOffEntries.map((entry) => entry.offDate);
+    }
+    return [];
+  }, [monthConfig.month, monthConfig.year, defaultValues.month, defaultValues.year, rosteredDaysOffEntries]);
+
+  const monthlyKpis = useMemo(
+    () =>
+      calculateMonthlyKpis({
+        month: monthConfig.month,
+        year: monthConfig.year,
+        employmentType: monthConfig.employmentType,
+        fullTimePointsTarget: monthConfig.fullTimePointsTarget,
+        offDates: previewOffDates,
+      }),
+    [monthConfig, previewOffDates]
+  );
+
+  const dateBounds = useMemo(
+    () => monthDateBounds(monthConfig.month, monthConfig.year),
+    [monthConfig.month, monthConfig.year]
+  );
+
+  const monthMatchesSaved =
+    monthConfig.month === defaultValues.month && monthConfig.year === defaultValues.year;
+
+  const canManageRosteredDaysOff = Boolean(consultantMonthId && monthMatchesSaved);
+
+  useEffect(() => {
+    setMonthConfig({
+      month: defaultValues.month,
+      year: defaultValues.year,
+      employmentType: defaultValues.employmentType,
+      fullTimePointsTarget: defaultValues.fullTimePointsTarget,
+    });
+    setRosteredDaysOffEntries(defaultValues.rosteredDaysOffEntries);
+    setBaselineRows(buildBaselineRows(defaultValues, contactTypes));
+  }, [defaultValues, contactTypes]);
+
+  async function addRosteredDayOff() {
+    if (!consultantMonthId) {
+      setRosterState({ error: "Save monthly setup first before adding rostered days off." });
+      return;
+    }
+
+    if (!newOffDate) {
+      setRosterState({ error: "Select a date for the rostered day off." });
+      return;
+    }
+
+    setRosterPending(true);
+    setRosterState({});
+
+    const formData = new FormData();
+    formData.set("consultantMonthId", consultantMonthId);
+    formData.set("offDate", newOffDate);
+    if (newOffReason.trim()) {
+      formData.set("reason", newOffReason.trim());
+    }
+
+    try {
+      const response = await fetch("/api/manual-input/rostered-days-off", {
+        method: "POST",
+        body: formData,
+        headers: { Accept: "application/json" },
+      });
+
+      if (response.status === 401) {
+        router.push("/login");
+        return;
+      }
+
+      const result = (await response.json()) as PerformanceActionState;
+      if (!response.ok || result.error) {
+        setRosterState({ error: result.error ?? "Failed to add rostered day off." });
+        return;
+      }
+
+      setRosterState({ success: true, message: result.message ?? "Rostered day off added." });
+      setNewOffDate("");
+      setNewOffReason("");
+      router.refresh();
+    } catch {
+      setRosterState({ error: "Failed to add rostered day off." });
+    } finally {
+      setRosterPending(false);
+    }
+  }
+
+  async function removeRosteredDayOff(entryId: string) {
+    setRosterPending(true);
+    setRosterState({});
+
+    const formData = new FormData();
+    formData.set("entryId", entryId);
+
+    try {
+      const response = await fetch("/api/manual-input/rostered-days-off/remove", {
+        method: "POST",
+        body: formData,
+        headers: { Accept: "application/json" },
+      });
+
+      if (response.status === 401) {
+        router.push("/login");
+        return;
+      }
+
+      const result = (await response.json()) as PerformanceActionState;
+      if (!response.ok || result.error) {
+        setRosterState({ error: result.error ?? "Failed to remove rostered day off." });
+        return;
+      }
+
+      setRosterState({ success: true, message: result.message ?? "Rostered day off removed." });
+      router.refresh();
+    } catch {
+      setRosterState({ error: "Failed to remove rostered day off." });
+    } finally {
+      setRosterPending(false);
+    }
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
+
+    if (mode === "baseline") {
+      pendingBaselineFormRef.current = formData;
+      setShowResetConfirm(true);
+      return;
+    }
+
     void submitManualInput(formData);
+  }
+
+  function confirmBaselineSave() {
+    setShowResetConfirm(false);
+    const formData = pendingBaselineFormRef.current;
+    pendingBaselineFormRef.current = null;
+    if (formData) {
+      void submitManualInput(formData);
+    }
+  }
+
+  function cancelBaselineSave() {
+    setShowResetConfirm(false);
+    pendingBaselineFormRef.current = null;
   }
 
   async function submitManualInput(formData: FormData) {
@@ -243,27 +411,142 @@ export default function ManualInputManager({
               value={monthConfig.fullTimePointsTarget}
               onChange={(value) => setMonthConfig((c) => ({ ...c, fullTimePointsTarget: Number(value || 0) }))}
             />
-            <InputField
-              label="Full-time rostered days"
-              name="fullTimeRosteredDays"
-              value={monthConfig.fullTimeRosteredDays}
-              onChange={(value) => setMonthConfig((c) => ({ ...c, fullTimeRosteredDays: Number(value || 0) }))}
-            />
-            <InputField
-              label="Total rostered days this month"
-              name="totalRosteredDaysThisMonth"
-              value={monthConfig.totalRosteredDaysThisMonth}
-              onChange={(value) => setMonthConfig((c) => ({ ...c, totalRosteredDaysThisMonth: Number(value || 0) }))}
-            />
-            <InputField
-              label="Completed rostered days so far"
-              name="completedRosteredDaysSoFar"
-              value={monthConfig.completedRosteredDaysSoFar}
-              onChange={(value) => setMonthConfig((c) => ({ ...c, completedRosteredDaysSoFar: Number(value || 0) }))}
-            />
+          </div>
 
-            {mode === "manual-adjustment" && (
-              <>
+          <div className="mt-6 rounded-lg border border-[var(--border)] bg-white p-4">
+            <p className="text-sm font-semibold text-[var(--foreground)]">Rostered days off</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Add or remove specific rostered days off. Performance data is not reset when you change these.
+            </p>
+
+            {(rosterState.error || rosterState.success) && (
+              <div
+                className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
+                  rosterState.error
+                    ? "border-red-200 bg-[var(--error-soft)] text-red-700"
+                    : "border-green-200 bg-[var(--success-soft)] text-green-700"
+                }`}
+              >
+                {rosterState.error ?? rosterState.message ?? "Updated rostered days off."}
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="block text-sm font-semibold text-[var(--muted)]">
+                Add rostered day off
+                <input
+                  type="date"
+                  value={newOffDate}
+                  min={dateBounds.min}
+                  max={dateBounds.max}
+                  onChange={(event) => setNewOffDate(event.target.value)}
+                  className={inputClass}
+                  disabled={!canManageRosteredDaysOff || rosterPending}
+                />
+              </label>
+              <label className="block text-sm font-semibold text-[var(--muted)] sm:col-span-2">
+                Reason (optional)
+                <input
+                  type="text"
+                  value={newOffReason}
+                  onChange={(event) => setNewOffReason(event.target.value)}
+                  className={inputClass}
+                  disabled={!canManageRosteredDaysOff || rosterPending}
+                  placeholder="e.g. Annual leave"
+                />
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => void addRosteredDayOff()}
+                  disabled={!canManageRosteredDaysOff || rosterPending}
+                  className="w-full rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-medium text-white hover:bg-[var(--brand-dark)] disabled:opacity-50"
+                >
+                  {rosterPending ? "Saving..." : "Add"}
+                </button>
+              </div>
+            </div>
+
+            {!canManageRosteredDaysOff && (
+              <p className="mt-3 text-xs text-[var(--muted)]">
+                {!consultantMonthId
+                  ? "Save monthly setup first to enable rostered days off."
+                  : "Save monthly setup after changing month or year before adding rostered days off."}
+              </p>
+            )}
+
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                Current rostered days off ({monthMatchesSaved ? previewOffDates.length : 0})
+              </p>
+              {!monthMatchesSaved ? (
+                <p className="mt-2 text-sm text-[var(--muted)]">
+                  Save monthly setup for this month and year to view or edit rostered days off.
+                </p>
+              ) : rosteredDaysOffEntries.length === 0 ? (
+                <p className="mt-2 text-sm text-[var(--muted)]">No rostered days off recorded.</p>
+              ) : (
+                <ul className="mt-2 divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
+                  {rosteredDaysOffEntries.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
+                    >
+                      <div>
+                        <p className="font-medium text-[var(--foreground)]">{formatOffDate(entry.offDate)}</p>
+                        {entry.reason && (
+                          <p className="text-xs text-[var(--muted)]">{entry.reason}</p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void removeRosteredDayOff(entry.id)}
+                        disabled={rosterPending}
+                        className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-[var(--error-soft)] disabled:opacity-50"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-lg border border-[var(--border)] bg-[#f8fbff] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+              Calculated monthly KPIs
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <PreviewField
+                label="Full-time rostered days"
+                value={monthlyKpis.fullTimeRosteredDays.toString()}
+              />
+              <PreviewField
+                label="Rostered days off"
+                value={monthlyKpis.rosteredDaysOff.toString()}
+              />
+              <PreviewField
+                label="Base rostered days this month"
+                value={monthlyKpis.baseRosteredDaysThisMonth.toString()}
+              />
+              <PreviewField
+                label="Total rostered days this month"
+                value={monthlyKpis.totalRosteredDaysThisMonth.toString()}
+              />
+              <PreviewField
+                label="Adjusted points target"
+                value={formatCurrency(monthlyKpis.adjustedPointsTarget)}
+              />
+              <PreviewField
+                label="Completed rostered days so far"
+                value={monthlyKpis.completedRosteredDaysSoFar.toString()}
+              />
+            </div>
+          </div>
+
+          {mode === "manual-adjustment" && (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <label className="block text-sm font-semibold text-[var(--muted)]">
                   Date
                   <input
@@ -275,9 +558,8 @@ export default function ManualInputManager({
                   />
                 </label>
                 <TextField label="Reason for adjustment" name="adjustmentReason" required />
-              </>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
@@ -486,6 +768,43 @@ export default function ManualInputManager({
           </table>
         </div>
       </div>
+
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-confirm-title"
+            className="w-full max-w-md rounded-xl border border-[var(--border)] bg-white p-6 shadow-lg"
+          >
+            <h3 id="reset-confirm-title" className="text-lg font-semibold text-[var(--foreground)]">
+              Reset month performance data?
+            </h3>
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              Saving Manual Input will reset existing daily contacts and manual adjustments for this
+              month. Continue?
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={cancelBaselineSave}
+                disabled={pending}
+                className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--brand)] hover:bg-[var(--brand-soft)] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmBaselineSave}
+                disabled={pending}
+                className="rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--brand-dark)] disabled:opacity-50"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -511,6 +830,15 @@ function ModeButton({
     >
       {children}
     </button>
+  );
+}
+
+function PreviewField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-[var(--foreground)]">{value}</p>
+    </div>
   );
 }
 

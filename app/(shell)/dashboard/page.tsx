@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import StatCard from "@/components/StatCard";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
 import { fetchConsultantPerformance } from "@/lib/performance/queries";
@@ -11,12 +12,16 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  if (!user) {
+    redirect("/login");
+  }
+
   const { month, year } = getCurrentMonthYear();
 
   const { data: setup } = await supabase
     .from("consultant_months")
     .select("*")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .eq("month", month)
     .eq("year", year)
     .maybeSingle();
@@ -78,7 +83,7 @@ export default async function DashboardPage() {
               <StatCard label="% To Target Conversion" value={formatPercent(performance?.percentToTargetConversion ?? 0)} />
               <StatCard label="Conversion Multiplier" value={formatNumber(performance?.mtdConversionMultiplier ?? 0, 2)} />
               <StatCard label="MTD Sales Points" value={formatCurrency(performance?.mtdTotalSalesPoints ?? 0)} />
-              <StatCard label="Points Target" value={formatCurrency(performance?.pointsTarget ?? 0)} />
+              <StatCard label="Points Target" value={formatCurrency(performance?.pointsTarget ?? 0)} subtext="Adjusted for roster" />
               <StatCard label="MTD DPP" value={formatCurrency(performance?.mtdDpp ?? 0)} />
               <StatCard label="Average GWP" value={formatCurrency(performance?.averageGwp ?? 0)} />
               <StatCard

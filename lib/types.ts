@@ -1,4 +1,5 @@
 import { dedupeBaselineRowsByContactType } from "@/lib/manualInput/baselines";
+import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
 
 export type EmploymentTypeDb = "full_time" | "part_time";
 export type EmploymentTypeUi = "Full-time" | "Part-time";
@@ -39,10 +40,28 @@ export type ConsultantMonthRow = {
   employment_type: EmploymentTypeDb;
   full_time_points_target: number;
   full_time_rostered_days: number;
+  base_rostered_days_this_month: number;
+  rostered_days_off: number;
   total_rostered_days_this_month: number;
+  adjusted_points_target: number;
   completed_rostered_days_so_far: number;
   created_at: string;
   updated_at?: string;
+};
+
+export type ConsultantRosteredDayOffRow = {
+  id: string;
+  consultant_month_id: string;
+  user_id: string;
+  off_date: string;
+  reason: string | null;
+  created_at: string;
+};
+
+export type RosteredDayOffEntry = {
+  id: string;
+  offDate: string;
+  reason: string | null;
 };
 
 export type ConsultantMonthUpsert = {
@@ -52,7 +71,10 @@ export type ConsultantMonthUpsert = {
   employment_type: EmploymentTypeDb;
   full_time_points_target: number;
   full_time_rostered_days: number;
+  base_rostered_days_this_month: number;
+  rostered_days_off: number;
   total_rostered_days_this_month: number;
+  adjusted_points_target: number;
   completed_rostered_days_so_far: number;
 };
 
@@ -157,8 +179,11 @@ export type ManualInputDefaultValues = {
   year: number;
   employmentType: EmploymentTypeUi;
   fullTimePointsTarget: number;
+  rosteredDaysOffEntries: RosteredDayOffEntry[];
   fullTimeRosteredDays: number;
+  baseRosteredDaysThisMonth: number;
   totalRosteredDaysThisMonth: number;
+  adjustedPointsTarget: number;
   completedRosteredDaysSoFar: number;
   baselineByContactType: Record<
     string,
@@ -224,8 +249,10 @@ export type LeaderboardRow = {
 
 export function rowToManualInputDefaults(
   monthRow: ConsultantMonthRow,
-  baselineRows: MonthlyContactBaselineRow[]
+  baselineRows: MonthlyContactBaselineRow[],
+  rosteredDaysOffEntries: RosteredDayOffEntry[] = []
 ): ManualInputDefaultValues {
+  const offDates = rosteredDaysOffEntries.map((entry) => entry.offDate);
   const baselineByContactType: ManualInputDefaultValues["baselineByContactType"] = {};
 
   dedupeBaselineRowsByContactType(baselineRows).forEach((row) => {
@@ -241,8 +268,22 @@ export function rowToManualInputDefaults(
     year: Number(monthRow.year),
     employmentType: employmentTypeFromDb(monthRow.employment_type),
     fullTimePointsTarget: Number(monthRow.full_time_points_target),
+    rosteredDaysOffEntries,
     fullTimeRosteredDays: Number(monthRow.full_time_rostered_days),
+    baseRosteredDaysThisMonth: Number(
+      monthRow.base_rostered_days_this_month ?? monthRow.total_rostered_days_this_month
+    ),
     totalRosteredDaysThisMonth: Number(monthRow.total_rostered_days_this_month),
+    adjustedPointsTarget: Number(
+      monthRow.adjusted_points_target ??
+        calculateMonthlyKpis({
+          month: Number(monthRow.month),
+          year: Number(monthRow.year),
+          employmentType: employmentTypeFromDb(monthRow.employment_type),
+          fullTimePointsTarget: Number(monthRow.full_time_points_target),
+          offDates,
+        }).adjustedPointsTarget
+    ),
     completedRosteredDaysSoFar: Number(monthRow.completed_rostered_days_so_far),
     baselineByContactType,
   };

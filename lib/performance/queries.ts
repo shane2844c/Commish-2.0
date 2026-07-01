@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateConsultantPerformance } from "@/lib/calculations";
+import { fetchRosteredDaysOff } from "@/lib/monthlyKpi/rosteredDaysOff";
 import type {
   ConsultantMonthRow,
   ConsultantPerformanceStats,
@@ -39,7 +40,7 @@ export async function fetchConsultantPerformance(
   supabase: SupabaseClient,
   month: ConsultantMonthRow
 ): Promise<ConsultantPerformanceStats> {
-  const [contactTypes, baselines, dailyEntries, adjustments] = await Promise.all([
+  const [contactTypes, baselines, dailyEntries, adjustments, offDates] = await Promise.all([
     fetchContactTypes(supabase),
     supabase
       .from("monthly_contact_baselines")
@@ -56,9 +57,17 @@ export async function fetchConsultantPerformance(
       .select("*")
       .eq("consultant_month_id", month.id)
       .then(({ data }) => (data ?? []) as ManualContactAdjustmentRow[]),
+    fetchRosteredDaysOff(supabase, month.id),
   ]);
 
-  return calculateConsultantPerformance(month, baselines, dailyEntries, adjustments, contactTypes);
+  return calculateConsultantPerformance(
+    month,
+    baselines,
+    dailyEntries,
+    adjustments,
+    contactTypes,
+    offDates
+  );
 }
 
 export async function fetchLeaderboardPerformance(
@@ -79,11 +88,13 @@ export async function fetchLeaderboardPerformance(
   const contactTypes = await fetchContactTypes(supabase);
   const monthIds = months.map((item) => item.id);
 
-  const [{ data: baselines }, { data: dailyEntries }, { data: adjustments }] = await Promise.all([
-    supabase.from("monthly_contact_baselines").select("*").in("consultant_month_id", monthIds),
-    supabase.from("daily_contact_entries").select("*").in("consultant_month_id", monthIds),
-    supabase.from("manual_contact_adjustments").select("*").in("consultant_month_id", monthIds),
-  ]);
+  const [{ data: baselines }, { data: dailyEntries }, { data: adjustments }, offDatesByMonth] =
+    await Promise.all([
+      supabase.from("monthly_contact_baselines").select("*").in("consultant_month_id", monthIds),
+      supabase.from("daily_contact_entries").select("*").in("consultant_month_id", monthIds),
+      supabase.from("manual_contact_adjustments").select("*").in("consultant_month_id", monthIds),
+      fetchOffDatesByMonthIds(supabase, monthIds),
+    ]);
 
   const baselinesByMonth = groupByConsultantMonth(
     (baselines ?? []) as MonthlyContactBaselineRow[]
@@ -99,9 +110,36 @@ export async function fetchLeaderboardPerformance(
       baselinesByMonth.get(monthRow.id) ?? [],
       dailyByMonth.get(monthRow.id) ?? [],
       adjustmentsByMonth.get(monthRow.id) ?? [],
-      contactTypes
+      contactTypes,
+      offDatesByMonth.get(monthRow.id) ?? []
     )
   );
+}
+
+async function fetchOffDatesByMonthIds(
+  supabase: SupabaseClient,
+  monthIds: string[]
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+
+  if (monthIds.length === 0) {
+    return map;
+  }
+
+  const { data } = await supabase
+    .from("consultant_rostered_days_off")
+    .select("consultant_month_id, off_date")
+    .in("consultant_month_id", monthIds)
+    .order("off_date", { ascending: true });
+
+  (data ?? []).forEach((row) => {
+    const monthId = row.consultant_month_id as string;
+    const list = map.get(monthId) ?? [];
+    list.push(row.off_date as string);
+    map.set(monthId, list);
+  });
+
+  return map;
 }
 
 function groupByConsultantMonth<T extends { consultant_month_id: string }>(rows: T[]) {

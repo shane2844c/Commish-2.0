@@ -7,6 +7,8 @@ import type {
   MonthlyContactBaselineRow,
 } from "@/lib/types";
 import { dedupeBaselineRowsByContactType } from "@/lib/manualInput/baselines";
+import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
+import { employmentTypeFromDb } from "@/lib/types";
 
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -134,7 +136,8 @@ export function calculateConsultantPerformance(
   baselines: MonthlyContactBaselineRow[],
   dailyEntries: DailyContactEntryRow[],
   adjustments: ManualContactAdjustmentRow[],
-  contactTypes: ContactTypeRow[]
+  contactTypes: ContactTypeRow[],
+  offDates: string[] = []
 ): ConsultantPerformanceStats {
   const uniqueBaselines = dedupeBaselineRowsByContactType(baselines);
 
@@ -206,21 +209,28 @@ export function calculateConsultantPerformance(
   const conversionMultiplier = getConversionMultiplier(percentToTargetConversion);
   const averageGwp = mtdSales > 0 ? mtdTotalGwp / mtdSales : 0;
 
-  const pointsTarget =
-    Number(month.full_time_rostered_days) > 0
-      ? (Number(month.full_time_points_target) * Number(month.total_rostered_days_this_month)) /
-        Number(month.full_time_rostered_days)
-      : 0;
+  const monthKpis = calculateMonthlyKpis({
+    month: Number(month.month),
+    year: Number(month.year),
+    employmentType: employmentTypeFromDb(month.employment_type),
+    fullTimePointsTarget: Number(month.full_time_points_target),
+    offDates,
+  });
 
-  const adjustedBrackets = getAdjustedCommissionBrackets(month);
+  const pointsTarget = Number(month.adjusted_points_target ?? monthKpis.adjustedPointsTarget);
+
+  const adjustedBrackets = getAdjustedCommissionBrackets({
+    full_time_rostered_days: monthKpis.fullTimeRosteredDays,
+    total_rostered_days_this_month: monthKpis.totalRosteredDaysThisMonth,
+  });
   const mtdDpp = getDppForPoints(mtdTotalSalesPoints, adjustedBrackets);
   const gwpAcceleratorDpp = getGwpAcceleratorDpp(averageGwp);
   const mtdBaseCommission = mtdTotalSalesPoints * mtdDpp * conversionMultiplier;
   const mtdGwpAccelerator = mtdTotalSalesPoints * gwpAcceleratorDpp;
   const mtdCommission = mtdBaseCommission + mtdGwpAccelerator;
 
-  const completedDays = Number(month.completed_rostered_days_so_far);
-  const totalRosteredDays = Number(month.total_rostered_days_this_month);
+  const completedDays = monthKpis.completedRosteredDaysSoFar;
+  const totalRosteredDays = monthKpis.totalRosteredDaysThisMonth;
   const distinctContactEntryDates = countDistinctContactEntryDates(dailyEntries);
   const projectionDays =
     completedDays > 0 ? completedDays : distinctContactEntryDates;

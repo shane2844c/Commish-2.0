@@ -16,7 +16,10 @@ create table if not exists public.consultant_months (
   employment_type text not null check (employment_type in ('full_time', 'part_time')),
   full_time_points_target numeric not null,
   full_time_rostered_days numeric not null,
+  base_rostered_days_this_month numeric not null default 0,
+  rostered_days_off numeric not null default 0,
   total_rostered_days_this_month numeric not null,
+  adjusted_points_target numeric not null default 0,
   completed_rostered_days_so_far numeric not null default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
@@ -88,6 +91,16 @@ create table if not exists public.manual_contact_adjustments (
   updated_at timestamptz default now()
 );
 
+create table if not exists public.consultant_rostered_days_off (
+  id uuid primary key default gen_random_uuid(),
+  consultant_month_id uuid references public.consultant_months(id) on delete cascade not null,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  off_date date not null,
+  reason text,
+  created_at timestamptz default now(),
+  unique(consultant_month_id, off_date)
+);
+
 alter table public.profiles enable row level security;
 alter table public.consultant_months enable row level security;
 alter table public.contact_types enable row level security;
@@ -95,6 +108,7 @@ alter table public.contact_dispositions enable row level security;
 alter table public.monthly_contact_baselines enable row level security;
 alter table public.daily_contact_entries enable row level security;
 alter table public.manual_contact_adjustments enable row level security;
+alter table public.consultant_rostered_days_off enable row level security;
 
 create policy "Profiles are readable by authenticated users"
   on public.profiles for select using (true);
@@ -142,6 +156,13 @@ create policy "Adjustments are readable by authenticated users"
 
 create policy "Users can modify their own adjustments"
   on public.manual_contact_adjustments for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "Rostered days off are readable by authenticated users"
+  on public.consultant_rostered_days_off for select using (true);
+
+create policy "Users can modify their own rostered days off"
+  on public.consultant_rostered_days_off for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 insert into public.contact_types (type_key, display_name, points_per_sale, expected_conversion_rate, sort_order)
