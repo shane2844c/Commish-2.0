@@ -7,6 +7,7 @@ import {
 } from "@/lib/contactTypes/helpers";
 import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
 import { mapRosteredDayOffRows } from "@/lib/monthlyKpi/rosteredDaysOff";
+import { requireAppUser } from "@/lib/app/session";
 import { fetchContactTypes } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -21,13 +22,7 @@ import {
 
 export default async function SetupPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
+  const user = await requireAppUser(supabase);
 
   const contactTypes = mapContactTypeRows(await fetchContactTypes(supabase));
   const { month, year } = getCurrentMonthYear();

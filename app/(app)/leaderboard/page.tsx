@@ -1,5 +1,6 @@
 import { AppPage } from "@/components/app";
 import LeaderboardClient from "@/components/LeaderboardClient";
+import { requireAppUser } from "@/lib/app/session";
 import { fetchLeaderboardRows } from "@/lib/metrics/leaderboardQueries";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMonthYear } from "@/lib/types";
@@ -10,13 +11,7 @@ type LeaderboardPageProps = {
 
 export default async function LeaderboardPage({ searchParams }: LeaderboardPageProps) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
+  const user = await requireAppUser(supabase);
 
   const params = await searchParams;
   const { month: currentMonth, year: currentYear } = getCurrentMonthYear();

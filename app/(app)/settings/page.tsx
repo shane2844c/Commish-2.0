@@ -1,16 +1,11 @@
 import { AppCard, AppPage } from "@/components/app";
 import UsernameForm from "@/components/UsernameForm";
+import { requireAppUser } from "@/lib/app/session";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
+  const user = await requireAppUser(supabase);
 
   const { data: profile } = await supabase
     .from("profiles")

@@ -137,7 +137,7 @@ export async function persistDailyContact(
 
   const syncResult = await syncConsultantMonthMetrics(supabase, consultantMonthId);
   if (syncResult.error) {
-    return { error: syncResult.error, status: 400 };
+    console.warn("[daily-contacts] metrics sync failed after save:", syncResult.error);
   }
 
   return { success: true };
@@ -171,22 +171,30 @@ export async function removeDailyContact(
 
   logSupabasePayload("daily_contact_entries (delete)", { id: entryId });
 
-  const { error } = await supabase
+  const { data: deletedRows, error } = await supabase
     .from("daily_contact_entries")
     .delete()
     .eq("id", entryId)
-    .eq("user_id", authResult.user.id);
+    .eq("user_id", authResult.user.id)
+    .select("id");
 
   if (error) {
     logSupabaseError("daily_contact_entries", error);
     return { error: error.message, status: 400 };
   }
 
+  if (!deletedRows?.length) {
+    return {
+      error: "Could not delete contact entry. It may have already been removed.",
+      status: 404,
+    };
+  }
+
   console.log("[supabase] daily_contact_entries delete success:", entryId);
 
   const syncResult = await syncConsultantMonthMetrics(supabase, consultantMonthId);
   if (syncResult.error) {
-    return { error: syncResult.error, status: 400 };
+    console.warn("[daily-contacts] metrics sync failed after delete:", syncResult.error);
   }
 
   return { success: true };

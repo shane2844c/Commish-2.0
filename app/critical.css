@@ -1,0 +1,187 @@
+/**
+ * Plain CSS theme + fallbacks. Imported directly from app/layout.tsx so styles
+ * still apply if the Tailwind bundle fails to compile in dev.
+ */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background, #f3f6fb);
+  color: var(--foreground, #152238);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+:root {
+  --background: #f3f6fb;
+  --foreground: #152238;
+  --card: #ffffff;
+  --border: #dbe3ef;
+  --muted: #617089;
+  --brand: #004a93;
+  --brand-dark: #003b79;
+  --brand-soft: #e8f0fb;
+  --success-soft: #e9f8ef;
+  --error-soft: #fcebec;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.commish-auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background, #f3f6fb);
+  padding: 1rem;
+}
+
+.commish-auth-wrap {
+  width: 100%;
+  max-width: 28rem;
+}
+
+.commish-auth-card {
+  background: var(--card, #ffffff);
+  border: 1px solid var(--border, #dbe3ef);
+  border-radius: 1rem;
+  padding: 2rem;
+  box-shadow: 0 10px 25px rgba(0, 74, 147, 0.08);
+}
+
+.commish-auth-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--foreground, #152238);
+}
+
+.commish-auth-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--muted, #617089);
+}
+
+.commish-auth-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 1.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border, #dbe3ef);
+  border-radius: 0.5rem;
+}
+
+.commish-auth-tab {
+  flex: 1;
+  border: none;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--muted, #617089);
+  cursor: pointer;
+}
+
+.commish-auth-tab.is-active {
+  background: var(--brand, #004a93);
+  color: #ffffff;
+}
+
+.commish-field {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.commish-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--muted, #617089);
+}
+
+.commish-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border, #dbe3ef);
+  border-radius: 0.5rem;
+  background: #ffffff;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--foreground, #152238);
+}
+
+.commish-input:focus {
+  outline: none;
+  border-color: var(--brand, #004a93);
+  box-shadow: 0 0 0 2px #dbe9fb;
+}
+
+.commish-btn-primary {
+  width: 100%;
+  border: none;
+  border-radius: 0.5rem;
+  background: var(--brand, #004a93);
+  color: #ffffff;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.commish-btn-primary:hover:not(:disabled) {
+  background: var(--brand-dark, #003b79);
+}
+
+.commish-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.commish-alert-error {
+  margin-top: 1rem;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  background: var(--error-soft, #fcebec);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: #b91c1c;
+}
+
+.commish-brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.commish-brand-mark p {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--brand, #004a93);
+  line-height: 1;
+}
+
+.commish-brand-mark span {
+  font-weight: 500;
+  color: var(--brand-dark, #003b79);
+}

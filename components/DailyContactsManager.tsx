@@ -47,8 +47,13 @@ export default function DailyContactsManager({
   const [saveState, setSaveState] = useState<PerformanceActionState>({});
   const [deleteState, setDeleteState] = useState<PerformanceActionState>({});
   const [savePending, setSavePending] = useState(false);
-  const [deletePending, setDeletePending] = useState(false);
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [visibleEntries, setVisibleEntries] = useState(entries);
   const [editEntry, setEditEntry] = useState<DailyContactEntry | null>(null);
+
+  useEffect(() => {
+    setVisibleEntries(entries);
+  }, [entries]);
 
   const [entryDate, setEntryDate] = useState(today);
   const [contactTypeKey, setContactTypeKey] = useState("outbound");
@@ -59,8 +64,8 @@ export default function DailyContactsManager({
   const requiresGwp = dispositionKey === "converted_to_sale";
 
   const dailyPerformance = useMemo(
-    () => calculateDailyConversionPerformance(entries, contactTypes, entryDate),
-    [entries, contactTypes, entryDate]
+    () => calculateDailyConversionPerformance(visibleEntries, contactTypes, entryDate),
+    [visibleEntries, contactTypes, entryDate]
   );
 
   useEffect(() => {
@@ -109,6 +114,7 @@ export default function DailyContactsManager({
   async function submitSave(formData: FormData) {
     setSavePending(true);
     setSaveState({});
+    setDeleteState({});
 
     try {
       const response = await fetch("/api/daily-contacts", {
@@ -143,8 +149,13 @@ export default function DailyContactsManager({
   }
 
   async function handleDelete(entryId: string) {
-    setDeletePending(true);
+    if (!window.confirm("Delete this contact entry? Dashboard figures will update after removal.")) {
+      return;
+    }
+
+    setDeletingEntryId(entryId);
     setDeleteState({});
+    setSaveState({});
 
     try {
       const formData = new FormData();
@@ -159,16 +170,29 @@ export default function DailyContactsManager({
         return;
       }
 
-      const result = (await response.json()) as PerformanceActionState;
-      setDeleteState(result);
-
-      if (response.ok && result.success) {
-        router.refresh();
+      let result: PerformanceActionState;
+      try {
+        result = (await response.json()) as PerformanceActionState;
+      } catch {
+        setDeleteState({ error: "Invalid server response. Please try again." });
+        return;
       }
+
+      if (!response.ok || result.error) {
+        setDeleteState({ error: result.error ?? "Failed to delete contact. Please try again." });
+        return;
+      }
+
+      setDeleteState({ success: true });
+      setVisibleEntries((current) => current.filter((entry) => entry.id !== entryId));
+      if (editEntry?.id === entryId) {
+        cancelEdit();
+      }
+      router.refresh();
     } catch {
       setDeleteState({ error: "Failed to delete contact. Please try again." });
     } finally {
-      setDeletePending(false);
+      setDeletingEntryId(null);
     }
   }
 
@@ -216,7 +240,7 @@ export default function DailyContactsManager({
 
         {(saveState.success || deleteState.success) && (
           <div className="mt-4 rounded-lg border border-green-200 bg-[var(--success-soft)] px-4 py-3 text-sm text-green-700">
-            Saved successfully.
+            {deleteState.success ? "Entry deleted." : "Saved successfully."}
           </div>
         )}
 
@@ -335,14 +359,14 @@ export default function DailyContactsManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
-              {entries.length === 0 ? (
+              {visibleEntries.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--muted)]">
                     No contacts logged yet.
                   </td>
                 </tr>
               ) : (
-                entries.map((entry) => (
+                visibleEntries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-[#f8fbff]">
                     <td className="whitespace-nowrap px-4 py-3 text-sm">{entry.entryDate}</td>
                     <td className="px-4 py-3 text-sm">{entry.contactTypeName}</td>
@@ -360,11 +384,13 @@ export default function DailyContactsManager({
                         </button>
                         <button
                           type="button"
-                          disabled={deletePending}
-                          onClick={() => handleDelete(entry.id)}
+                          disabled={deletingEntryId === entry.id}
+                          onClick={() => {
+                            void handleDelete(entry.id);
+                          }}
                           className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                         >
-                          Delete
+                          {deletingEntryId === entry.id ? "Deleting..." : "Delete"}
                         </button>
                       </div>
                     </td>

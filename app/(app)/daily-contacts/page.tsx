@@ -11,19 +11,16 @@ import {
   mapContactTypeRows,
 } from "@/lib/contactTypes/helpers";
 import { APP_ROUTES } from "@/lib/app/routes";
+import { requireAppUser } from "@/lib/app/session";
 import { fetchContactTypes } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMonthYear, type DailyContactEntryRow } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 export default async function DailyContactsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
+  const user = await requireAppUser(supabase);
 
   const [contactTypes, dispositionRows] = await Promise.all([
     mapContactTypeRows(await fetchContactTypes(supabase)),

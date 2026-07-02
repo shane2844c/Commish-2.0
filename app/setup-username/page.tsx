@@ -1,8 +1,12 @@
 import { redirect } from "next/navigation";
+import AuthScreen from "@/components/auth/AuthScreen";
+import Card from "@/components/ui/Card";
 import UsernameForm from "@/components/UsernameForm";
 import { hasUsername } from "@/lib/profiles/usernameValidation";
 import { createClient } from "@/lib/supabase/server";
 import { logSupabaseError } from "@/lib/supabase/logPayload";
+
+export const dynamic = "force-dynamic";
 
 export default async function SetupUsernamePage() {
   const supabase = await createClient();
@@ -27,17 +31,19 @@ export default async function SetupUsernamePage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--background)] px-4">
-      <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-white p-8 shadow-[0_10px_25px_rgba(0,74,147,0.08)]">
-        <h1 className="text-2xl font-semibold text-[var(--foreground)]">Choose your username</h1>
-        <p className="mt-2 text-sm text-[var(--muted)]">
+    <AuthScreen>
+      <Card className="p-8">
+        <h1 className="commish-auth-title text-2xl font-semibold text-[var(--foreground)]">
+          Choose your username
+        </h1>
+        <p className="commish-auth-subtitle mt-2 text-sm text-[var(--muted)]">
           Create a username before accessing the app. This is how you&apos;ll appear on the
           leaderboard and across Commish.
         </p>
         <div className="mt-6">
           <UsernameForm submitLabel="Save username" redirectTo="/dashboard" />
         </div>
-      </div>
-    </div>
+      </Card>
+    </AuthScreen>
   );
 }

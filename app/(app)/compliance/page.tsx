@@ -1,6 +1,7 @@
 import { AppPage } from "@/components/app";
 import ComplianceManager from "@/components/ComplianceManager";
 import { fetchComplianceCallScores, fetchComplianceMetricsForMonth } from "@/lib/compliance/queries";
+import { requireAppUser } from "@/lib/app/session";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMonthYear } from "@/lib/types";
 
@@ -10,13 +11,7 @@ type CompliancePageProps = {
 
 export default async function CompliancePage({ searchParams }: CompliancePageProps) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
+  const user = await requireAppUser(supabase);
 
   const params = await searchParams;
   const { month: currentMonth, year: currentYear } = getCurrentMonthYear();

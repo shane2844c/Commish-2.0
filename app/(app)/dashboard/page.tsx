@@ -5,19 +5,16 @@ import { applyComplianceToCommission } from "@/lib/compliance/calculate";
 import { fetchComplianceMetricsForMonth } from "@/lib/compliance/queries";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
 import { APP_ROUTES } from "@/lib/app/routes";
+import { requireAppUser } from "@/lib/app/session";
 import { fetchConsultantPerformance } from "@/lib/performance/queries";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMonthYear, type ConsultantMonthRow } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
+  const user = await requireAppUser(supabase);
 
   const { month, year } = getCurrentMonthYear();
 

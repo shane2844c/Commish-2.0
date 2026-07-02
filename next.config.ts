@@ -2,8 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
+  // Default dev uses Turbopack (`npm run dev`). Webpack overrides apply to `npm run dev:webpack` only.
   webpack: (config, { dev }) => {
-    // OneDrive/synced folders can corrupt webpack's persistent disk cache symlinks.
     if (dev) {
       config.cache = { type: "memory" };
       config.watchOptions = {
@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
+  turbopack: {},
 };
 
 export default nextConfig;
