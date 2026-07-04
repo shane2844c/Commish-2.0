@@ -6,6 +6,8 @@ import { fetchComplianceMetricsForMonth } from "@/lib/compliance/queries";
 
 import { calculateConsultantMonthMetrics } from "@/lib/calculations";
 
+import { backfillDailyContactEntryCounts } from "@/lib/dailyContacts/backfillCounts";
+
 import { fetchRosteredDaysOff } from "@/lib/monthlyKpi/rosteredDaysOff";
 
 import { fetchContactTypes } from "@/lib/performance/queries";
@@ -205,7 +207,7 @@ export async function syncConsultantMonthMetrics(
 
   consultantMonthId: string
 
-): Promise<{ error?: string }> {
+): Promise<{ metrics?: ConsultantPerformanceStats; error?: string }> {
 
   const { data: consultantMonth, error: monthError } = await supabase
 
@@ -239,41 +241,35 @@ export async function syncConsultantMonthMetrics(
 
   const monthRow = consultantMonth as ConsultantMonthRow;
 
+  const contactTypes = await fetchContactTypes(supabase);
 
+  const backfillResult = await backfillDailyContactEntryCounts(
+    supabase,
+    consultantMonthId,
+    contactTypes
+  );
 
-  const [contactTypes, baselinesResult, dailyResult, adjustmentsResult, offDates] =
+  if (backfillResult.error) {
+    console.warn("[metrics-sync] daily contact count backfill failed:", backfillResult.error);
+  } else if (backfillResult.updated > 0) {
+    console.log("[metrics-sync] backfilled daily contact counts:", backfillResult.updated);
+  }
 
-    await Promise.all([
-
-      fetchContactTypes(supabase),
-
-      supabase
-
-        .from("monthly_contact_baselines")
-
-        .select("*")
-
-        .eq("consultant_month_id", consultantMonthId),
-
-      supabase
-
-        .from("daily_contact_entries")
-
-        .select("*")
-
-        .eq("consultant_month_id", consultantMonthId),
-
-      supabase
-
-        .from("manual_contact_adjustments")
-
-        .select("*")
-
-        .eq("consultant_month_id", consultantMonthId),
-
-      fetchRosteredDaysOff(supabase, consultantMonthId),
-
-    ]);
+  const [baselinesResult, dailyResult, adjustmentsResult, offDates] = await Promise.all([
+    supabase
+      .from("monthly_contact_baselines")
+      .select("*")
+      .eq("consultant_month_id", consultantMonthId),
+    supabase
+      .from("daily_contact_entries")
+      .select("*")
+      .eq("consultant_month_id", consultantMonthId),
+    supabase
+      .from("manual_contact_adjustments")
+      .select("*")
+      .eq("consultant_month_id", consultantMonthId),
+    fetchRosteredDaysOff(supabase, consultantMonthId),
+  ]);
 
 
 
@@ -304,8 +300,6 @@ export async function syncConsultantMonthMetrics(
     return { error: adjustmentsResult.error.message };
 
   }
-
-
 
   const metrics = calculateConsultantMonthMetrics({
 
@@ -351,7 +345,7 @@ export async function syncConsultantMonthMetrics(
 
   if (!fullResult.error) {
 
-    return {};
+    return { metrics };
 
   }
 
@@ -379,7 +373,7 @@ export async function syncConsultantMonthMetrics(
 
   if (!legacyResult.error) {
 
-    return {};
+    return { metrics };
 
   }
 
@@ -393,7 +387,7 @@ export async function syncConsultantMonthMetrics(
 
     );
 
-    return {};
+    return { metrics };
 
   }
 

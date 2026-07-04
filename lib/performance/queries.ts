@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateConsultantPerformance } from "@/lib/calculations";
+import { backfillDailyContactEntryCounts } from "@/lib/dailyContacts/backfillCounts";
+import { syncConsultantMonthMetrics } from "@/lib/metrics/syncConsultantMonthMetrics";
 import { fetchRosteredDaysOff } from "@/lib/monthlyKpi/rosteredDaysOff";
 import type {
   ConsultantMonthRow,
@@ -38,12 +40,15 @@ export async function fetchConsultantPerformanceForMonth(
   return fetchConsultantPerformance(supabase, month as ConsultantMonthRow);
 }
 
-export async function fetchConsultantPerformance(
+async function calculateConsultantPerformanceFallback(
   supabase: SupabaseClient,
   month: ConsultantMonthRow
 ): Promise<ConsultantPerformanceStats> {
-  const [contactTypes, baselines, dailyEntries, adjustments, offDates] = await Promise.all([
-    fetchContactTypes(supabase),
+  const contactTypes = await fetchContactTypes(supabase);
+
+  await backfillDailyContactEntryCounts(supabase, month.id, contactTypes);
+
+  const [baselines, dailyEntries, adjustments, offDates] = await Promise.all([
     supabase
       .from("monthly_contact_baselines")
       .select("*")
@@ -70,4 +75,21 @@ export async function fetchConsultantPerformance(
     contactTypes,
     offDates
   );
+}
+
+export async function fetchConsultantPerformance(
+  supabase: SupabaseClient,
+  month: ConsultantMonthRow
+): Promise<ConsultantPerformanceStats> {
+  const syncResult = await syncConsultantMonthMetrics(supabase, month.id);
+
+  if (syncResult.metrics) {
+    return syncResult.metrics;
+  }
+
+  if (syncResult.error) {
+    console.warn("[performance] metrics sync failed, using live calculation:", syncResult.error);
+  }
+
+  return calculateConsultantPerformanceFallback(supabase, month);
 }

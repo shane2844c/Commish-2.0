@@ -304,6 +304,12 @@ export type ConsultantPerformanceStats = {
   projectedGwpAcceleratorDpp: number;
   projectedConversionMultiplier: number;
   projectedCommission: number;
+  mtdConversionBreakdown?: {
+    contactDenominator: number;
+    salesNumerator: number;
+    callbackEntriesExcludedFromContacts: number;
+    callbackSalesIncludedInSales: number;
+  };
   compliance?: ComplianceMetrics;
   complianceAdjustedMtdCommission?: number;
   complianceAdjustedProjectedCommission?: number;

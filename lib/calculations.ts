@@ -6,9 +6,18 @@ import type {
   ManualContactAdjustmentRow,
   MonthlyContactBaselineRow,
 } from "@/lib/types";
+import {
+  accumulateMtdConversionBreakdown,
+  contactCountForConversion,
+  createEmptyMtdConversionBreakdown,
+  type MtdConversionBreakdown,
+} from "@/lib/calculations/contactAggregation";
+import { isCallbackContactType } from "@/lib/contactTypes/callback";
 import { dedupeBaselineRowsByContactType } from "@/lib/manualInput/baselines";
 import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
 import { employmentTypeFromDb } from "@/lib/types";
+
+export type { MtdConversionBreakdown };
 
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -119,11 +128,20 @@ function resolveTypeConfig(
   return { pointsPerSale: 0, expectedConversionRate: 0 };
 }
 
-function countDistinctContactEntryDates(dailyEntries: DailyContactEntryRow[]): number {
+function countDistinctContactEntryDates(
+  dailyEntries: DailyContactEntryRow[],
+  contactTypes: ContactTypeRow[]
+): number {
   const dates = new Set<string>();
 
   dailyEntries.forEach((row) => {
-    if (Number(row.contacts_count) > 0) {
+    if (
+      contactCountForConversion(
+        row.contact_type_key,
+        Number(row.contacts_count),
+        contactTypes
+      ) > 0
+    ) {
       dates.add(row.entry_date);
     }
   });
@@ -235,14 +253,31 @@ function calculateConsultantPerformanceFromRaw(
   let mtdTotalGwp = 0;
   let mtdTotalSalesPoints = 0;
   let blendedNumerator = 0;
+  const mtdConversionBreakdown = createEmptyMtdConversionBreakdown();
 
   totalsByType.forEach((totals, typeKey) => {
     const config = resolveTypeConfig(typeKey, contactTypes);
-    eligibleContacts += totals.contacts;
+    const contactsForConversion = contactCountForConversion(typeKey, totals.contacts, contactTypes);
+
+    accumulateMtdConversionBreakdown(
+      mtdConversionBreakdown,
+      typeKey,
+      totals.contacts,
+      totals.convertedSales,
+      contactTypes
+    );
+
+    eligibleContacts += contactsForConversion;
     mtdSales += totals.convertedSales;
     mtdTotalGwp += totals.totalGwp;
     mtdTotalSalesPoints += totals.convertedSales * config.pointsPerSale;
-    blendedNumerator += totals.contacts * config.expectedConversionRate;
+    blendedNumerator += contactsForConversion * config.expectedConversionRate;
+  });
+
+  dailyEntries.forEach((row) => {
+    if (isCallbackContactType(row.contact_type_key, contactTypes)) {
+      mtdConversionBreakdown.callbackEntriesExcludedFromContacts += 1;
+    }
   });
 
   const mtdConversionRate = eligibleContacts > 0 ? mtdSales / eligibleContacts : 0;
@@ -285,7 +320,7 @@ function calculateConsultantPerformanceFromRaw(
 
   const completedDays = monthKpis.completedRosteredDaysSoFar;
   const totalRosteredDays = monthKpis.totalRosteredDaysThisMonth;
-  const distinctContactEntryDates = countDistinctContactEntryDates(dailyEntries);
+  const distinctContactEntryDates = countDistinctContactEntryDates(dailyEntries, contactTypes);
   const projectionDays =
     completedDays > 0 ? completedDays : distinctContactEntryDates;
 
@@ -336,5 +371,6 @@ function calculateConsultantPerformanceFromRaw(
     projectedGwpAcceleratorDpp,
     projectedConversionMultiplier,
     projectedCommission,
+    mtdConversionBreakdown,
   };
 }

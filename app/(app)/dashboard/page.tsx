@@ -106,6 +106,32 @@ export default async function DashboardPage() {
             </div>
           </div>
 
+          {process.env.NODE_ENV === "development" && performance?.mtdConversionBreakdown && (
+            <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-amber-900">
+                MTD Conversion Debug (dev only)
+              </h3>
+              <dl className="mt-3 grid gap-2 text-sm text-amber-950 sm:grid-cols-2">
+                <div>
+                  <dt className="font-medium">MTD contact denominator</dt>
+                  <dd>{performance.mtdConversionBreakdown.contactDenominator}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium">MTD sales numerator</dt>
+                  <dd>{performance.mtdConversionBreakdown.salesNumerator}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium">Callback contacts excluded</dt>
+                  <dd>{performance.mtdConversionBreakdown.callbackEntriesExcludedFromContacts}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium">Callback sales included</dt>
+                  <dd>{performance.mtdConversionBreakdown.callbackSalesIncludedInSales}</dd>
+                </div>
+              </dl>
+            </div>
+          )}
+
           {compliance && (
             <div className="mt-6">
               <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
