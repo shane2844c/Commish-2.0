@@ -29,7 +29,7 @@ export default async function LeaderboardPage({ searchParams }: LeaderboardPageP
   return (
     <AppPage
       title="Leaderboard"
-      description="Ranked by final payable MTD commission after QA compliance. Supporting metrics explain each consultant's performance."
+      description="Ranked by final payable MTD commission. Performance metrics only — QA and compliance details remain private to each consultant."
     >
       <LeaderboardClient
         rows={leaderboardRows}

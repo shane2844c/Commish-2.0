@@ -12,7 +12,7 @@ import {
 import type { ContactDispositionOption } from "@/lib/dailyContacts/dispositions";
 import type { ContactTypeOption } from "@/lib/contactTypes/helpers";
 import { CALLBACK_CONTACT_TYPE_HELPER, isCallbackContactType } from "@/lib/contactTypes/callback";
-import { formatCurrency, formatPercent } from "@/lib/calculations";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
 import type { PerformanceActionState } from "@/lib/types";
 
 type DailyContactEntry = {
@@ -253,7 +253,7 @@ export default function DailyContactsManager({
           label="Converted Sales Today"
           value={todayPerformance.dailyConvertedSales.toString()}
         />
-        <SummaryCard label="Sales Points Today" value={formatCurrency(todayPerformance.salesPointsToday)} />
+        <SummaryCard label="Sales Points Today" value={formatNumber(todayPerformance.salesPointsToday)} />
         <SummaryCard label="Average GWP Today" value={formatCurrency(todayPerformance.averageGwpToday)} />
         <SummaryCard
           label="Daily Actual Conversion"
@@ -455,7 +455,7 @@ export default function DailyContactsManager({
                       ) : null}
                     </td>
                     <td className="px-4 py-3 text-sm">{entry.dispositionName}</td>
-                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(entry.salesPoints)}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatNumber(entry.salesPoints)}</td>
                     <td className="px-4 py-3 text-right text-sm">{formatCurrency(entry.totalGwp)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">

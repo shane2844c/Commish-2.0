@@ -3,7 +3,7 @@ import { AppEmptyState, AppPage } from "@/components/app";
 import StatCard from "@/components/StatCard";
 import { applyComplianceToCommission } from "@/lib/compliance/calculate";
 import { fetchComplianceMetricsForMonth } from "@/lib/compliance/queries";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
+import { formatCurrency, formatCurrencyPerPoint, formatNumber, formatPercent } from "@/lib/calculations";
 import { APP_ROUTES } from "@/lib/app/routes";
 import { requireAppUser } from "@/lib/app/session";
 import { fetchConsultantPerformance } from "@/lib/performance/queries";
@@ -90,13 +90,13 @@ export default async function DashboardPage() {
               <StatCard label="MTD Target Conversion" value={formatPercent(performance?.mtdTargetConversion ?? 0)} />
               <StatCard label="% To Target Conversion" value={formatPercent(performance?.percentToTargetConversion ?? 0)} />
               <StatCard label="Conversion Multiplier" value={formatNumber(performance?.mtdConversionMultiplier ?? 0, 2)} />
-              <StatCard label="MTD Sales Points" value={formatCurrency(performance?.mtdTotalSalesPoints ?? 0)} />
-              <StatCard label="Points Target" value={formatCurrency(performance?.pointsTarget ?? 0)} subtext="Adjusted for roster" />
-              <StatCard label="MTD DPP" value={formatCurrency(performance?.mtdDpp ?? 0)} />
+              <StatCard label="MTD Sales Points" value={formatNumber(performance?.mtdTotalSalesPoints ?? 0)} />
+              <StatCard label="Points Target" value={formatNumber(performance?.pointsTarget ?? 0)} subtext="Adjusted for roster" />
+              <StatCard label="MTD DPP" value={formatCurrencyPerPoint(performance?.mtdDpp ?? 0)} />
               <StatCard label="Average GWP" value={formatCurrency(performance?.averageGwp ?? 0)} />
               <StatCard
                 label="GWP Accelerator"
-                value={formatCurrency(performance?.gwpAcceleratorDpp ?? 0)}
+                value={formatCurrencyPerPoint(performance?.gwpAcceleratorDpp ?? 0)}
               />
               <StatCard
                 label="MTD Commission"
@@ -166,12 +166,12 @@ export default async function DashboardPage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <StatCard
                 label="Projected Points"
-                value={formatCurrency(performance?.projectedTotalSalesPoints ?? 0)}
+                value={formatNumber(performance?.projectedTotalSalesPoints ?? 0)}
                 highlight="projected"
               />
               <StatCard
                 label="Projected DPP"
-                value={formatCurrency(performance?.projectedDpp ?? 0)}
+                value={formatCurrencyPerPoint(performance?.projectedDpp ?? 0)}
                 highlight="projected"
               />
               <StatCard

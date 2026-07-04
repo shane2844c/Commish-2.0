@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { ContactTypeOption } from "@/lib/contactTypes/helpers";
-import { formatCurrency, formatPercent } from "@/lib/calculations";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
 import { calculateMonthlyKpis } from "@/lib/monthlyKpi/roster";
 import { averageGwpFromTotals } from "@/lib/types";
 import type { AdjustmentHistoryRow, EmploymentTypeUi, ManualInputDefaultValues, PerformanceActionState, RosteredDayOffEntry } from "@/lib/types";
@@ -536,7 +536,7 @@ export default function ManualInputManager({
               />
               <PreviewField
                 label="Adjusted points target"
-                value={formatCurrency(monthlyKpis.adjustedPointsTarget)}
+                value={formatNumber(monthlyKpis.adjustedPointsTarget)}
               />
               <PreviewField
                 label="Completed rostered days so far"
@@ -638,7 +638,7 @@ export default function ManualInputManager({
                         />
                       </td>
                       <td className="px-4 py-3 text-right text-sm font-semibold text-[var(--brand)]">
-                        {formatCurrency(salesPoints)}
+                        {formatNumber(salesPoints)}
                       </td>
                     </tr>
                   );
@@ -698,7 +698,7 @@ export default function ManualInputManager({
                       />
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-semibold text-[var(--brand)]">
-                      {formatCurrency(salesPoints)}
+                      {formatNumber(salesPoints)}
                     </td>
                   </tr>
                 );
@@ -710,9 +710,9 @@ export default function ManualInputManager({
         <div className="rounded-xl border border-[var(--border)] bg-white p-5">
           <h4 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Preview (calculated locally)</h4>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <PreviewItem label="Total contacts" value={formatCurrency(preview.contacts)} />
-            <PreviewItem label="Converted sales" value={formatCurrency(preview.converted)} />
-            <PreviewItem label="Sales points" value={formatCurrency(preview.salesPoints)} />
+            <PreviewItem label="Total contacts" value={formatNumber(preview.contacts, 0)} />
+            <PreviewItem label="Converted sales" value={formatNumber(preview.converted, 0)} />
+            <PreviewItem label="Sales points" value={formatNumber(preview.salesPoints)} />
             <PreviewItem label="Blended target conversion" value={formatPercent(preview.blendedTargetConversion)} />
             <PreviewItem label="Actual conversion" value={formatPercent(preview.actualConversion)} />
             <PreviewItem label="% to target conversion" value={formatPercent(preview.percentToTargetConversion)} />
@@ -758,9 +758,9 @@ export default function ManualInputManager({
                     <td className="whitespace-nowrap px-4 py-3 text-sm">{row.adjustmentDate}</td>
                     <td className="px-4 py-3 text-sm text-[var(--muted)]">{row.reason}</td>
                     <td className="px-4 py-3 text-sm">{row.contactTypeName}</td>
-                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(row.contactsDelta)}</td>
-                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(row.convertedSalesDelta)}</td>
-                    <td className="px-4 py-3 text-right text-sm">{formatCurrency(row.salesPointsDelta)}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatNumber(row.contactsDelta, 0)}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatNumber(row.convertedSalesDelta, 0)}</td>
+                    <td className="px-4 py-3 text-right text-sm">{formatNumber(row.salesPointsDelta)}</td>
                   </tr>
                 ))
               )}

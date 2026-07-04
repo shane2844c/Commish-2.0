@@ -1,14 +1,15 @@
 import type { LeaderboardRow } from "@/lib/types";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/calculations";
+import {
+  formatCurrency,
+  formatCurrencyPerPoint,
+  formatNumber,
+  formatPercent,
+} from "@/lib/calculations";
 
 type LeaderboardTableProps = {
   rows: LeaderboardRow[];
   currentUserId: string;
 };
-
-function formatPerPoint(value: number): string {
-  return `$${formatCurrency(value)} / point`;
-}
 
 export function getLeaderboardRowClass(position: number): string {
   if (position === 1) {
@@ -55,15 +56,172 @@ function rowClassName(row: LeaderboardRow, currentUserId: string): string {
   return classes.join(" ");
 }
 
-function formatQaAverage(value: number): string {
-  if (value <= 0) {
-    return "—";
-  }
-  return `${value.toFixed(1)}%`;
-}
-
 const cellClass =
   "relative z-10 whitespace-nowrap px-3 py-3 text-sm text-[var(--foreground)]";
+
+const headerClass =
+  "px-3 py-3 text-xs font-medium uppercase tracking-wider text-[var(--brand)]";
+
+const stickyHeaderClass = `${headerClass} sticky left-0 z-30 bg-[#f6f9ff]`;
+const stickyHeaderClassSecond = `${headerClass} sticky left-[4.5rem] z-30 bg-[#f6f9ff] min-w-[10rem]`;
+
+const stickyCellClass = `${cellClass} sticky left-0 z-20 bg-inherit`;
+const stickyCellClassSecond = `${cellClass} sticky left-[4.5rem] z-20 bg-inherit min-w-[10rem]`;
+
+type ColumnDef = {
+  key: string;
+  label: string;
+  align: "left" | "right";
+  sticky?: boolean;
+  render: (row: LeaderboardRow) => React.ReactNode;
+  headerClassName?: string;
+  cellClassName?: string;
+};
+
+const COLUMNS: ColumnDef[] = [
+  {
+    key: "position",
+    label: "Position",
+    align: "left",
+    sticky: true,
+    headerClassName: stickyHeaderClass,
+    cellClassName: stickyCellClass,
+    render: (row) => (
+      <>
+        {row.position === 1 && (
+          <div className="pointer-events-none absolute inset-0 z-0">
+            <span className="gold-sparkle absolute left-3 top-2 text-base text-yellow-400">✦</span>
+            <span
+              className="gold-sparkle absolute right-4 top-3 text-base text-amber-400"
+              style={{ animationDelay: "0.35s" }}
+            >
+              ✨
+            </span>
+            <span
+              className="gold-sparkle absolute bottom-2 left-10 text-sm text-yellow-300"
+              style={{ animationDelay: "0.7s" }}
+            >
+              ✧
+            </span>
+            <span
+              className="gold-sparkle absolute bottom-3 right-16 text-sm text-amber-300"
+              style={{ animationDelay: "1.05s" }}
+            >
+              ✦
+            </span>
+          </div>
+        )}
+        <div className="relative z-10 flex items-center gap-2">
+          {positionRankIcon(row.position) && (
+            <span aria-hidden="true">{positionRankIcon(row.position)}</span>
+          )}
+          <span className={positionRankLabelClass(row.position)}>#{row.position}</span>
+        </div>
+      </>
+    ),
+  },
+  {
+    key: "consultant",
+    label: "Consultant",
+    align: "left",
+    sticky: true,
+    headerClassName: stickyHeaderClassSecond,
+    cellClassName: stickyCellClassSecond,
+    render: (row) => row.name,
+  },
+  {
+    key: "mtdTotalSalesPoints",
+    label: "MTD Sales Points",
+    align: "right",
+    render: (row) => formatNumber(row.mtdTotalSalesPoints),
+  },
+  {
+    key: "pointsTarget",
+    label: "Points Target",
+    align: "right",
+    render: (row) => formatNumber(row.pointsTarget),
+  },
+  {
+    key: "mtdConversionRate",
+    label: "MTD Conversion Rate",
+    align: "right",
+    render: (row) => formatPercent(row.mtdConversionRate),
+  },
+  {
+    key: "mtdTargetConversion",
+    label: "MTD Target Conversion",
+    align: "right",
+    render: (row) => formatPercent(row.mtdTargetConversion),
+  },
+  {
+    key: "percentToTargetConversion",
+    label: "% to Con Target",
+    align: "right",
+    render: (row) => formatPercent(row.percentToTargetConversion),
+  },
+  {
+    key: "mtdConversionMultiplier",
+    label: "MTD Conversion Multiplier",
+    align: "right",
+    render: (row) => formatNumber(row.mtdConversionMultiplier, 2),
+  },
+  {
+    key: "averageGwp",
+    label: "Avg GWP",
+    align: "right",
+    render: (row) => formatCurrency(row.averageGwp),
+  },
+  {
+    key: "gwpAcceleratorPerPoint",
+    label: "GWP Accelerator",
+    align: "right",
+    render: (row) => formatCurrencyPerPoint(row.gwpAcceleratorPerPoint),
+  },
+  {
+    key: "mtdDpp",
+    label: "MTD DPP",
+    align: "right",
+    render: (row) => formatCurrencyPerPoint(row.mtdDpp),
+  },
+  {
+    key: "complianceAdjustedMtdCommission",
+    label: "MTD Commission",
+    align: "right",
+    render: (row) => (
+      <span className="font-semibold text-[var(--brand)]">
+        {formatCurrency(row.complianceAdjustedMtdCommission)}
+      </span>
+    ),
+  },
+  {
+    key: "projectedTotalSalesPoints",
+    label: "Projected Total Sales Points",
+    align: "right",
+    render: (row) => formatNumber(row.projectedTotalSalesPoints),
+  },
+  {
+    key: "projectedDpp",
+    label: "Projected DPP",
+    align: "right",
+    render: (row) => formatCurrencyPerPoint(row.projectedDpp),
+  },
+  {
+    key: "complianceAdjustedProjectedCommission",
+    label: "Projected Commission",
+    align: "right",
+    render: (row) => (
+      <span className="font-semibold text-[var(--brand)]">
+        {formatCurrency(row.complianceAdjustedProjectedCommission)}
+      </span>
+    ),
+  },
+  {
+    key: "projectedConversionMultiplier",
+    label: "Projected Conversion Multiplier",
+    align: "right",
+    render: (row) => formatNumber(row.projectedConversionMultiplier, 2),
+  },
+];
 
 export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTableProps) {
   if (rows.length === 0) {
@@ -78,69 +236,19 @@ export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTab
     <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
       <div className="h-1 bg-[var(--brand)]" />
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-[var(--border)]">
+        <table className="min-w-max w-full divide-y divide-[var(--border)]">
           <thead className="bg-[#f6f9ff]">
             <tr>
-              <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Position
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Consultant
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                MTD Commission Before QA
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                QA Average
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Compliance Payable Rate
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Final Payable MTD Commission
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Projected Final Commission
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Projected Commission Before QA
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                MTD Total Sales Points
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Points Target
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                MTD Conversion Rate
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                MTD Target Conversion
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                % to Target Conversion
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                MTD Conversion Multiplier
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Average GWP
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                GWP Accelerator
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                MTD DPP
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Projected Total Sales Points
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Projected DPP
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--brand)]">
-                Projected Conversion Multiplier
-              </th>
+              {COLUMNS.map((column) => (
+                <th
+                  key={column.key}
+                  className={`${column.headerClassName ?? headerClass} ${
+                    column.align === "right" ? "text-right" : "text-left"
+                  }`}
+                >
+                  {column.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)] bg-white">
@@ -149,79 +257,38 @@ export default function LeaderboardTable({ rows, currentUserId }: LeaderboardTab
 
               return (
                 <tr key={row.userId} className={rowClassName(row, currentUserId)}>
-                  <td className={`${cellClass} relative overflow-hidden font-medium`}>
-                    {row.position === 1 && (
-                      <div className="pointer-events-none absolute inset-0 z-0">
-                        <span className="gold-sparkle absolute left-3 top-2 text-base text-yellow-400">
-                          ✦
-                        </span>
-                        <span
-                          className="gold-sparkle absolute right-4 top-3 text-base text-amber-400"
-                          style={{ animationDelay: "0.35s" }}
-                        >
-                          ✨
-                        </span>
-                        <span
-                          className="gold-sparkle absolute bottom-2 left-10 text-sm text-yellow-300"
-                          style={{ animationDelay: "0.7s" }}
-                        >
-                          ✧
-                        </span>
-                        <span
-                          className="gold-sparkle absolute bottom-3 right-16 text-sm text-amber-300"
-                          style={{ animationDelay: "1.05s" }}
-                        >
-                          ✦
-                        </span>
-                      </div>
-                    )}
-                    <div className="relative z-10 flex items-center gap-2">
-                      {positionRankIcon(row.position) && (
-                        <span aria-hidden="true">{positionRankIcon(row.position)}</span>
-                      )}
-                      <span className={positionRankLabelClass(row.position)}>#{row.position}</span>
-                    </div>
-                  </td>
-                  <td className={cellClass}>
-                    <div className="flex items-center gap-2">
-                      <span className={row.position <= 3 ? "font-semibold text-[var(--foreground)]" : ""}>
-                        {row.name}
-                      </span>
-                      {isCurrentUser && (
-                        <span className="rounded-full bg-[var(--brand)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                          You
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className={`${cellClass} text-right`}>{formatCurrency(row.mtdCommission)}</td>
-                  <td className={`${cellClass} text-right`}>{formatQaAverage(row.qaAverage)}</td>
-                  <td className={`${cellClass} text-right`}>{row.compliancePayableRateLabel}</td>
-                  <td className={`${cellClass} text-right font-semibold text-[var(--brand)]`}>
-                    {formatCurrency(row.complianceAdjustedMtdCommission)}
-                  </td>
-                  <td className={`${cellClass} text-right font-semibold text-[var(--brand)]`}>
-                    {formatCurrency(row.complianceAdjustedProjectedCommission)}
-                  </td>
-                  <td className={`${cellClass} text-right`}>{formatCurrency(row.projectedCommission)}</td>
-                  <td className={`${cellClass} text-right`}>{formatCurrency(row.mtdTotalSalesPoints)}</td>
-                  <td className={`${cellClass} text-right`}>{formatCurrency(row.pointsTarget)}</td>
-                  <td className={`${cellClass} text-right`}>{formatPercent(row.mtdConversionRate)}</td>
-                  <td className={`${cellClass} text-right`}>{formatPercent(row.mtdTargetConversion)}</td>
-                  <td className={`${cellClass} text-right`}>{formatPercent(row.percentToTargetConversion)}</td>
-                  <td className={`${cellClass} text-right`}>
-                    {formatNumber(row.mtdConversionMultiplier, 2)}
-                  </td>
-                  <td className={`${cellClass} text-right`}>{formatCurrency(row.averageGwp)}</td>
-                  <td className={`${cellClass} text-right`}>{formatPerPoint(row.gwpAcceleratorPerPoint)}</td>
-                  <td className={`${cellClass} text-right`}>{formatPerPoint(row.mtdDpp)}</td>
-                  <td className={`${cellClass} text-right`}>
-                    {formatCurrency(row.projectedTotalSalesPoints)}
-                  </td>
-                  <td className={`${cellClass} text-right`}>{formatPerPoint(row.projectedDpp)}</td>
-                  <td className={`${cellClass} text-right`}>
-                    {formatNumber(row.projectedConversionMultiplier, 2)}
-                  </td>
+                  {COLUMNS.map((column) => {
+                    const isConsultant = column.key === "consultant";
+                    const isPosition = column.key === "position";
+
+                    return (
+                      <td
+                        key={column.key}
+                        className={`${column.cellClassName ?? cellClass} ${
+                          column.align === "right" ? "text-right" : "text-left"
+                        } ${isPosition ? "relative overflow-hidden font-medium" : ""}`}
+                      >
+                        {isConsultant ? (
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={
+                                row.position <= 3 ? "font-semibold text-[var(--foreground)]" : ""
+                              }
+                            >
+                              {column.render(row)}
+                            </span>
+                            {isCurrentUser && (
+                              <span className="rounded-full bg-[var(--brand)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                You
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          column.render(row)
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}

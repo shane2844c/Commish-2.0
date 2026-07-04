@@ -23,12 +23,47 @@ export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-export function formatCurrency(value: number): string {
-  return value.toFixed(2);
+type FormatCurrencyOptions = {
+  decimals?: number;
+  fallback?: string;
+};
+
+export function formatCurrency(
+  value: number | null | undefined,
+  options?: FormatCurrencyOptions
+): string {
+  const decimals = options?.decimals ?? 2;
+  const fallback = options?.fallback ?? "$0.00";
+
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return fallback;
+  }
+
+  const formatted = Number(value).toLocaleString("en-AU", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+
+  return `$${formatted}`;
 }
 
-export function formatNumber(value: number, decimals = 1): string {
-  return value.toFixed(decimals);
+export function formatCurrencyNoDecimals(value: number | null | undefined): string {
+  return formatCurrency(value, { decimals: 0 });
+}
+
+export function formatCurrencyPerPoint(value: number | null | undefined): string {
+  return `${formatCurrency(value)} / point`;
+}
+
+export function formatNumber(value: number | null | undefined, decimals = 2): string {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return (0).toFixed(decimals);
+  }
+
+  return Number(value).toLocaleString("en-AU", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
 export type CommissionBracket = {
