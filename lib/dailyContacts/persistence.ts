@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isCallbackContactType } from "@/lib/contactTypes/callback";
 import { calculateCounts } from "@/lib/dailyContacts/counts";
 import { assertValidContactTypeKey } from "@/lib/contactTypes/keys";
 import type { DailyContactEntryInsert, PerformanceActionState } from "@/lib/types";
@@ -75,7 +76,19 @@ export async function persistDailyContact(
     return { error: "Consultant month not found.", status: 400 };
   }
 
-  const { contacts_count, converted_sales_count } = calculateCounts(contactTypeKey, dispositionKey);
+  const { data: contactTypeRow } = await supabase
+    .from("contact_types")
+    .select("type_key, is_callback")
+    .eq("type_key", contactTypeKey)
+    .maybeSingle();
+
+  if (!contactTypeRow) {
+    return { error: `Invalid contact_type_key: "${contactTypeKey}"`, status: 400 };
+  }
+
+  const { contacts_count, converted_sales_count } = calculateCounts(contactTypeKey, dispositionKey, {
+    isCallback: Boolean(contactTypeRow.is_callback) || isCallbackContactType(contactTypeKey),
+  });
 
   const payload: DailyContactEntryInsert = {
     consultant_month_id: consultantMonthId,

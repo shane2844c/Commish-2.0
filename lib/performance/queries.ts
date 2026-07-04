@@ -13,7 +13,9 @@ import type {
 export async function fetchContactTypes(supabase: SupabaseClient): Promise<ContactTypeRow[]> {
   const { data } = await supabase
     .from("contact_types")
-    .select("type_key, display_name, points_per_sale, expected_conversion_rate, sort_order, created_at")
+    .select(
+      "type_key, display_name, points_per_sale, expected_conversion_rate, sort_order, is_callback, created_at"
+    )
     .order("sort_order", { ascending: true });
 
   return (data ?? []) as ContactTypeRow[];

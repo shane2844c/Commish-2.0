@@ -122,6 +122,7 @@ export type ContactTypeRow = {
   points_per_sale: number;
   expected_conversion_rate: number;
   sort_order: number;
+  is_callback?: boolean;
   created_at: string;
 };
 

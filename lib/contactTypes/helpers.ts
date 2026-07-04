@@ -1,4 +1,5 @@
 import type { ContactTypeRow } from "@/lib/types";
+import { isCallbackContactType } from "@/lib/contactTypes/callback";
 
 /** Map DB row to UI-friendly shape while keeping type_key for payloads */
 export type ContactTypeOption = {
@@ -7,6 +8,7 @@ export type ContactTypeOption = {
   points_per_sale: number;
   expected_conversion_rate: number;
   sort_order: number;
+  is_callback: boolean;
 };
 
 export function mapContactTypeRows(rows: ContactTypeRow[]): ContactTypeOption[] {
@@ -16,6 +18,7 @@ export function mapContactTypeRows(rows: ContactTypeRow[]): ContactTypeOption[] 
     points_per_sale: Number(row.points_per_sale),
     expected_conversion_rate: Number(row.expected_conversion_rate),
     sort_order: Number(row.sort_order),
+    is_callback: isCallbackContactType(row.type_key, rows),
   }));
 }
 

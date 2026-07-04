@@ -1,3 +1,5 @@
+import { isCallbackContactType } from "@/lib/contactTypes/callback";
+
 export const CLI_CONTACT_TYPES = ["cli", "crossvert_cli", "billy_cli"] as const;
 
 const NORMAL_CONTACT_DISPOSITIONS = [
@@ -15,16 +17,25 @@ const CLI_ONLY_DISPOSITIONS = [
 ] as const;
 
 export function isCliContactType(contactTypeKey: string): boolean {
-  return (CLI_CONTACT_TYPES as readonly string[]).includes(contactTypeKey);
+  const baseKey = contactTypeKey.replace(/^callback_/, "");
+  return (CLI_CONTACT_TYPES as readonly string[]).includes(baseKey);
 }
 
-export function calculateCounts(contactTypeKey: string, dispositionKey: string) {
-  const contactsCount = (NORMAL_CONTACT_DISPOSITIONS as readonly string[]).includes(dispositionKey)
-    ? 1
-    : (CLI_ONLY_DISPOSITIONS as readonly string[]).includes(dispositionKey) &&
-        isCliContactType(contactTypeKey)
+export function calculateCounts(
+  contactTypeKey: string,
+  dispositionKey: string,
+  options?: { isCallback?: boolean }
+) {
+  const isCallback = options?.isCallback ?? isCallbackContactType(contactTypeKey);
+
+  const contactsCount = isCallback
+    ? 0
+    : (NORMAL_CONTACT_DISPOSITIONS as readonly string[]).includes(dispositionKey)
       ? 1
-      : 0;
+      : (CLI_ONLY_DISPOSITIONS as readonly string[]).includes(dispositionKey) &&
+          isCliContactType(contactTypeKey)
+        ? 1
+        : 0;
 
   const convertedSalesCount = dispositionKey === "converted_to_sale" ? 1 : 0;
 

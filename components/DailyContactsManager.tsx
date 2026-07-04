@@ -4,10 +4,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   calculateDailyConversionPerformance,
+  filterEntriesForLog,
   logDailyConversionPerformance,
+  summarizeContactLog,
+  type ContactLogFilter,
 } from "@/lib/dailyContacts/dailyConversion";
 import type { ContactDispositionOption } from "@/lib/dailyContacts/dispositions";
 import type { ContactTypeOption } from "@/lib/contactTypes/helpers";
+import { CALLBACK_CONTACT_TYPE_HELPER, isCallbackContactType } from "@/lib/contactTypes/callback";
 import { formatCurrency, formatPercent } from "@/lib/calculations";
 import type { PerformanceActionState } from "@/lib/types";
 
@@ -34,6 +38,13 @@ type DailyContactsManagerProps = {
   dispositions: ContactDispositionOption[];
 };
 
+const LOG_FILTER_OPTIONS: { value: ContactLogFilter; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "selected_date", label: "Selected Date" },
+  { value: "this_month", label: "This Month" },
+  { value: "all", label: "All" },
+];
+
 export default function DailyContactsManager({
   consultantMonthId,
   entries,
@@ -50,6 +61,7 @@ export default function DailyContactsManager({
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [visibleEntries, setVisibleEntries] = useState(entries);
   const [editEntry, setEditEntry] = useState<DailyContactEntry | null>(null);
+  const [logFilter, setLogFilter] = useState<ContactLogFilter>("today");
 
   useEffect(() => {
     setVisibleEntries(entries);
@@ -62,15 +74,31 @@ export default function DailyContactsManager({
   const [notes, setNotes] = useState("");
 
   const requiresGwp = dispositionKey === "converted_to_sale";
+  const selectedContactType = contactTypes.find((item) => item.type_key === contactTypeKey);
+  const isCallbackType = Boolean(selectedContactType?.is_callback);
 
-  const dailyPerformance = useMemo(
-    () => calculateDailyConversionPerformance(visibleEntries, contactTypes, entryDate),
-    [visibleEntries, contactTypes, entryDate]
+  const todayPerformance = useMemo(
+    () => calculateDailyConversionPerformance(visibleEntries, contactTypes, today),
+    [visibleEntries, contactTypes, today]
+  );
+
+  const filteredLogEntries = useMemo(
+    () =>
+      filterEntriesForLog(visibleEntries, logFilter, {
+        today,
+        selectedDate: entryDate,
+      }),
+    [visibleEntries, logFilter, today, entryDate]
+  );
+
+  const logSummary = useMemo(
+    () => summarizeContactLog(filteredLogEntries, contactTypes),
+    [filteredLogEntries, contactTypes]
   );
 
   useEffect(() => {
-    logDailyConversionPerformance(dailyPerformance);
-  }, [dailyPerformance]);
+    logDailyConversionPerformance(todayPerformance);
+  }, [todayPerformance]);
 
   useEffect(() => {
     if (editEntry) {
@@ -196,32 +224,48 @@ export default function DailyContactsManager({
     }
   }
 
+  const logFilterLabel =
+    logFilter === "today"
+      ? today
+      : logFilter === "selected_date"
+        ? entryDate
+        : logFilter === "this_month"
+          ? today.slice(0, 7)
+          : "all dates";
+
   return (
     <div className="space-y-6">
       <div>
         <p className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
-          Daily performance for {entryDate}
+          Today&apos;s performance ({today})
         </p>
         <p className="mt-1 text-xs text-[var(--muted)]">
-          Separate from Dashboard MTD metrics. Updates when the form date changes or entries are saved.
+          Cards always reflect calendar today. Separate from Dashboard MTD metrics.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        <SummaryCard label="Contacts Logged Today" value={dailyPerformance.dailyContacts.toString()} />
-        <SummaryCard label="Converted Sales Today" value={dailyPerformance.dailyConvertedSales.toString()} />
-        <SummaryCard label="Sales Points Today" value={formatCurrency(dailyPerformance.salesPointsToday)} />
-        <SummaryCard label="Average GWP Today" value={formatCurrency(dailyPerformance.averageGwpToday)} />
+        <SummaryCard
+          label="Contact Count Today"
+          value={todayPerformance.dailyContacts.toString()}
+          helperText="Callbacks are shown in the log but excluded from contact count."
+        />
+        <SummaryCard
+          label="Converted Sales Today"
+          value={todayPerformance.dailyConvertedSales.toString()}
+        />
+        <SummaryCard label="Sales Points Today" value={formatCurrency(todayPerformance.salesPointsToday)} />
+        <SummaryCard label="Average GWP Today" value={formatCurrency(todayPerformance.averageGwpToday)} />
         <SummaryCard
           label="Daily Actual Conversion"
-          value={formatPercent(dailyPerformance.dailyActualConversion)}
+          value={formatPercent(todayPerformance.dailyActualConversion)}
         />
         <SummaryCard
           label="Daily Target Conversion"
-          value={formatPercent(dailyPerformance.dailyTargetConversion)}
+          value={formatPercent(todayPerformance.dailyTargetConversion)}
         />
         <SummaryCard
           label="Daily % To Target Conversion"
-          value={formatPercent(dailyPerformance.dailyPercentToTargetConversion)}
+          value={formatPercent(todayPerformance.dailyPercentToTargetConversion)}
           highlight
         />
       </div>
@@ -274,6 +318,9 @@ export default function DailyContactsManager({
                   </option>
                 ))}
               </select>
+              {isCallbackType ? (
+                <p className="mt-2 text-xs font-normal text-[var(--brand)]">{CALLBACK_CONTACT_TYPE_HELPER}</p>
+              ) : null}
             </FormField>
 
             <FormField label="Disposition">
@@ -291,8 +338,9 @@ export default function DailyContactsManager({
                 ))}
               </select>
               <p className="mt-2 text-xs font-normal text-[var(--muted)]">
-                No answer, disgruntled, wrong number, and message bank only count as contacts for CLI
-                contact types.
+                {isCallbackType
+                  ? "Callback dispos count sales/points but do not add to contact totals."
+                  : "No answer, disgruntled, wrong number, and message bank only count as contacts for CLI contact types."}
               </p>
             </FormField>
 
@@ -344,7 +392,36 @@ export default function DailyContactsManager({
 
       <div className="rounded-xl border border-[var(--border)] bg-white shadow-[0_6px_18px_rgba(0,74,147,0.08)]">
         <div className="border-b border-[var(--border)] px-6 py-4">
-          <h3 className="text-lg font-semibold text-[var(--foreground)]">Contact Log</h3>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h3 className="text-lg font-semibold text-[var(--foreground)]">Contact Log</h3>
+            <div className="flex flex-wrap gap-2">
+              {LOG_FILTER_OPTIONS.map((option) => {
+                const isActive = logFilter === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setLogFilter(option.value)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                      isActive
+                        ? "bg-[var(--brand)] text-white"
+                        : "border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-dark)]"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-[var(--muted)]">
+            Showing {logSummary.entryCount} {logSummary.entryCount === 1 ? "entry" : "entries"}.{" "}
+            {logSummary.contactCount} count as contacts. {logSummary.callbackEntryCount}{" "}
+            {logSummary.callbackEntryCount === 1 ? "is a callback entry" : "are callback entries"}.
+            {logFilter !== "all" ? (
+              <span className="ml-1 text-[var(--foreground)]">({logFilterLabel})</span>
+            ) : null}
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[var(--border)]">
@@ -359,17 +436,24 @@ export default function DailyContactsManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
-              {visibleEntries.length === 0 ? (
+              {filteredLogEntries.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--muted)]">
-                    No contacts logged yet.
+                    No entries for this filter.
                   </td>
                 </tr>
               ) : (
-                visibleEntries.map((entry) => (
+                filteredLogEntries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-[#f8fbff]">
                     <td className="whitespace-nowrap px-4 py-3 text-sm">{entry.entryDate}</td>
-                    <td className="px-4 py-3 text-sm">{entry.contactTypeName}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {entry.contactTypeName}
+                      {isCallbackContactType(entry.contactTypeKey, contactTypes) ? (
+                        <span className="ml-2 rounded bg-[var(--brand-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--brand)]">
+                          Callback
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3 text-sm">{entry.dispositionName}</td>
                     <td className="px-4 py-3 text-right text-sm">{formatCurrency(entry.salesPoints)}</td>
                     <td className="px-4 py-3 text-right text-sm">{formatCurrency(entry.totalGwp)}</td>
@@ -408,10 +492,12 @@ export default function DailyContactsManager({
 function SummaryCard({
   label,
   value,
+  helperText,
   highlight = false,
 }: {
   label: string;
   value: string;
+  helperText?: string;
   highlight?: boolean;
 }) {
   return (
@@ -422,6 +508,7 @@ function SummaryCard({
     >
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</p>
       <p className="mt-2 text-xl font-semibold text-[var(--foreground)]">{value}</p>
+      {helperText ? <p className="mt-2 text-xs text-[var(--muted)]">{helperText}</p> : null}
     </div>
   );
 }
